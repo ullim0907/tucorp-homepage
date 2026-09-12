@@ -1,0 +1,23 @@
+# 선택 사항: main 브랜치에 push할 때마다 Firebase Hosting(tucorp-homepage 사이트)에
+# 자동 배포합니다. 사용하려면 GitHub 레포 Settings → Secrets → Actions에
+# FIREBASE_SERVICE_ACCOUNT (Firebase 콘솔에서 발급한 서비스 계정 JSON 전체)를
+# 등록한 뒤 이 파일 이름을 그대로 두면 됩니다. 준비되기 전까지는 이 파일을
+# 지우거나 무시해도 지금 단계(수동 배포)에는 아무 영향이 없습니다.
+
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+          target: homepage
+          channelId: live
