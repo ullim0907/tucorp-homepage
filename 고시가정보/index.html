@@ -477,6 +477,13 @@ function populateWeights(){
   weightSel.disabled = false;
   const rows = DATA.filter(r=>r.company===selCompany && r.series===selSeries);
   const weights = [...new Set(rows.map(r=>r.weight))];
+  weights.sort((a,b)=>{
+    const an = isNum(a), bn = isNum(b);
+    if(an && bn) return a - b;
+    if(an) return -1;
+    if(bn) return 1;
+    return String(a).localeCompare(String(b), 'ko');
+  });
   weightSel.innerHTML = '<option value="">평량</option>' +
     weights.map(w=>`<option value="${w}">${w}${isNum(w)?'g/㎡':''}</option>`).join('');
 
