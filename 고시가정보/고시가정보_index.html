@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>고시가 계산기 | 더울림코퍼레이션</title>
+<link rel="stylesheet" as="style" crossorigin
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<!--
+  ⚠ 이 파일은 단일(self-contained) HTML 파일입니다.
+  데이터(price-data.json 내용)와 스타일, 로직이 전부 이 파일 안에 내장되어 있어
+  서버나 다른 파일 없이 더블클릭만으로 바로 사용할 수 있습니다.
+  나중에 더울림코퍼레이션 홈페이지의 한 카테고리(서브페이지)로 옮길 때는
+  <div id="app"> 이하 내용 + <style>/<script> 블록을 그대로 이식하면 됩니다.
+  원본 고시가표(제지사별_고시가격_검색.html 등)가 갱신되면 DATA 배열만 재추출해서 교체해주세요.
+-->
+<style>
+  :root {
+    --navy: #1e3350; --navy-dark: #12213a; --navy-soft: #2c4a70;
+    --green: #1f6b4d; --green-dark: #154a35; --green-soft: #e8f3ee;
+    --bg: #f5f7f6; --card: #ffffff; --border: #e2e6ea; --text: #1f2530; --muted: #6b7684;
+    --warn-bg: #fff9ec; --warn-border: #e0c46a; --warn-text: #7a5d10;
+    --radius: 12px; --radius-sm: 8px; --max-w: 1100px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: 'Pretendard','Noto Sans KR',-apple-system,BlinkMacSystemFont,
+      'Malgun Gothic','Apple SD Gothic Neo',sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font-family: inherit; }
+  .dash { color: #c3cad1; }
+
+  /* ---- 헤더 ---- */
+  .page-header {
+    background: linear-gradient(135deg, var(--navy), var(--navy-dark));
+    color: #fff; padding: 32px 20px 0; text-align: center;
+  }
+  .page-header h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.4px; }
+  .page-header p { margin: 0 0 20px; font-size: 13px; color: #cfd8e3; text-align: right; max-width: 780px; margin-left: auto; margin-right: auto; padding: 0 16px; box-sizing: border-box; }
+
+  /* ---- 탭 ---- */
+  .tabs { display: flex; gap: 6px; max-width: 780px; margin: 6px auto 0; padding: 0 16px; }
+  .tab-btn {
+    flex: 1; background: rgba(255,255,255,0.10); border: none; color: #cfd8e3;
+    padding: 12px 10px; font-size: 16.5px; font-weight: 800; letter-spacing: -0.2px; cursor: pointer;
+    border-radius: 12px 12px 0 0; border-bottom: 3px solid transparent;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .tab-btn.active { background: var(--bg); color: var(--navy); border-bottom-color: var(--green); }
+  .tab-btn:not(.active):hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+  .tab-content { display: none; max-width: 780px; margin: 0 auto; padding: 24px 16px 60px; }
+  .tab-content.active { display: block; }
+
+  /* ---- 공용 패널 ---- */
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .panel-title { background: var(--navy); color: #fff; font-size: 14px; font-weight: 700; padding: 11px 16px; }
+  .empty-box {
+    background: var(--warn-bg); border: 1px dashed var(--warn-border); border-radius: var(--radius-sm);
+    padding: 26px 18px; text-align: center; color: var(--warn-text); font-size: 13.5px; margin: 14px;
+  }
+
+  /* ================= 계산기 탭 (v4) ================= */
+  .calc-wrap { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  .section-label { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
+  .step-badge {
+    flex: none; width: 21px; height: 21px; border-radius: 50%; background: var(--navy); color: #fff;
+    font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  }
+
+  .calc-block {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px;
+  }
+  .row-double { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 620px) { .row-double { grid-template-columns: 1fr; } }
+
+  select, .text-input {
+    width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px;
+    font-size: 14.5px; background: #fafbfc; color: var(--text);
+  }
+  select:disabled, .text-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .suggest-list {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    max-height: 280px; overflow-y: auto; box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  }
+  .suggest-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 10px 12px; font-size: 13.5px; cursor: pointer; border-bottom: 1px solid #f0f2f4;
+  }
+  .suggest-item:last-child { border-bottom: none; }
+  .suggest-item:hover { background: var(--green-soft); }
+  .suggest-item .s-name { font-weight: 600; color: var(--text); }
+  .suggest-item .s-company { font-size: 11.5px; color: var(--muted); flex: none; }
+  .suggest-empty { padding: 14px 12px; font-size: 12.5px; color: var(--muted); text-align: center; }
+
+  #sel-color { margin-top: 8px; }
+
+  /* 3) 규격 선택 — 1~2행: 프리셋 8개(4열 x 2행, 동일폭) */
+  .size-grid { display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 14px; row-gap: 7px; align-items: stretch; }
+  @media (max-width: 560px) { .size-grid { grid-template-columns: 1fr 1fr; } }
+  .preset-box {
+    min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fafbfc; color: var(--text);
+    padding: 12px 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; text-align: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  }
+  .preset-sub { font-size: 10.5px; color: var(--muted); font-weight: 400; }
+  .preset-box.active { border-color: var(--green); background: var(--green-soft); color: var(--green-dark); }
+  .preset-box:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+
+  /* 3) 규격 선택 — 2행: 직접입력 (가로/세로 스테퍼 + 스왑 아이콘) */
+  .dims-row-v2 { display: flex; align-items: flex-end; gap: 14px; margin-top: 14px; }
+  @media (max-width: 480px) { .dims-row-v2 { flex-wrap: wrap; } }
+  .dim-block { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .dim-title { font-size: 13.5px; font-weight: 700; color: var(--navy); }
+  .dim-stepper {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    border: 1px solid var(--border); border-radius: var(--radius); background: #fff; padding: 8px 10px;
+  }
+  .dim-stepper:focus-within { border-color: var(--green); }
+  .dim-stepper input[type=number] {
+    flex: 1; min-width: 0; border: none; background: transparent; text-align: center;
+    font-size: 15px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .dim-stepper input[type=number]::placeholder { color: #b9c0c8; font-weight: 400; }
+  .dim-stepper input[type=number]:focus { outline: none; }
+  .step-btn {
+    flex: none; width: 26px; height: 26px; border-radius: 0; border: none; background: none; color: var(--green);
+    font-size: 20px; font-weight: 700; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .step-btn:hover { color: var(--green-dark); }
+  .swap-col { flex: none; display: flex; align-items: center; justify-content: center; padding-bottom: 8px; }
+  .swap-btn-v2 {
+    border: none; background: none; cursor: pointer; color: var(--green); padding: 0;
+    display: flex; flex-direction: column; align-items: center; line-height: 1; font-size: 15px; font-weight: 700;
+  }
+  .swap-btn-v2 span { display: block; }
+  .swap-btn-v2:hover { color: var(--green-dark); }
+
+  /* 5) 할인율: 전체폭 */
+  .discount-flex { display: flex; align-items: center; gap: 10px; width: 100%; }
+  .discount-flex input[type=number], .discount-flex input[type=text] {
+    flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; font-size: 15px;
+    font-variant-numeric: tabular-nums; text-align: center;
+  }
+  .pct-label { font-size: 15px; color: var(--muted); font-weight: 700; flex: none; }
+
+  /* 결과 카드 (하단에 복사/공유 버튼 포함) */
+  .result-card {
+    background: linear-gradient(135deg, var(--navy), var(--green-dark)); color: #fff; border-radius: var(--radius);
+    padding: 18px;
+  }
+  .result-card .r-title { font-size: 16px; font-weight: 700; }
+  .result-card .r-sub { font-size: 12px; color: #cfe8db; margin-top: 2px; margin-bottom: 12px; }
+  .result-divider { height: 1px; background: rgba(255,255,255,0.18); margin: 10px 0; }
+  .result-line { display: flex; justify-content: space-between; align-items: baseline; font-size: 13.5px; padding: 3px 0; }
+  .result-line .r-label { color: #cfe8db; }
+  .result-line .r-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .result-line .r-value .unit { font-size: 11.5px; font-weight: 400; margin-left: 2px; color: #cfe8db; }
+  /* 공급가: 폰트 크기는 할인율과 동일, 굵기만 강조 */
+  .result-line.main .r-label { font-weight: 800; color: #fff; }
+  .result-line.main .r-value { font-weight: 800; color: #fff; }
+  .calc-basis {
+    margin-top: 12px; padding: 12px 14px; font-size: 12.5px; color: #eaf3ee; line-height: 1.6;
+    background: rgba(255,255,255,0.1); border-radius: var(--radius-sm);
+  }
+  .calc-basis .sub-line { display: block; margin-top: 4px; color: #cfe8db; }
+
+  .result-placeholder {
+    background: var(--card); border: 1px dashed var(--border); border-radius: var(--radius);
+    padding: 26px 18px; text-align: center; color: var(--muted); font-size: 13px;
+  }
+
+  .result-actions { display: flex; gap: 14px; margin-top: 12px; }
+  .result-actions button {
+    flex: 1; border-radius: var(--radius-sm); padding: 13px 8px; font-size: 14px; font-weight: 700; cursor: pointer;
+    border: none; display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: filter .15s, transform .15s;
+  }
+  .result-actions button:hover { filter: brightness(1.05); }
+  #copy-btn { background: #fff; color: var(--text); }
+  #share-btn { background: var(--green); color: #fff; }
+  .result-actions button.copied { background: var(--green-soft); color: var(--green-dark); }
+
+  /* ================= 고시가표 탭 ================= */
+  .company-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8.4px; }
+  @media (max-width: 700px) { .company-row { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 420px) { .company-row { grid-template-columns: repeat(3, 1fr); } }
+  .company-box {
+    min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fafbfc; color: var(--text);
+    padding: 11px 4px; font-size: 13.5px; font-weight: 700; cursor: pointer; text-align: center;
+  }
+  .company-box.active { border-color: var(--green); background: var(--green-soft); color: var(--green-dark); }
+
+  .table-row-triple { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 14px; }
+  @media (max-width: 620px) { .table-row-triple { grid-template-columns: 1fr; } }
+  .filter-label {
+    font-size: 13.5px; color: var(--muted); font-weight: 700; text-align: center;
+    padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .table-row-triple select, .table-row-triple input[type=text] {
+    width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+    font-size: 13.5px; background: #fafbfc; color: var(--text); text-align: center;
+  }
+  .table-row-triple select option { text-align: left; }
+
+  .price-table-wrap { overflow: auto; max-height: 560px; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; background: var(--navy); color: #fff;
+    text-align: center; padding: 9px 8px; font-weight: 600; z-index: 2; white-space: nowrap;
+  }
+  thead th.left { text-align: left; }
+  tbody td { padding: 7px 8px; border-bottom: 1px solid #eef1f4; vertical-align: middle; }
+  tbody tr:hover td { background: #f7fafc; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.name-cell { white-space: normal; max-width: 220px; font-weight: 600; text-align: left; }
+  td.name-cell.cat-cell { font-weight: 400; }
+  td.name-cell .scolor { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; font-weight: 400; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>고시가 정보</h1>
+  <p>(주)더울림Corp. 26년 09월 기준</p>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="calc">고시가 계산기</button>
+    <button class="tab-btn" data-tab="table">고시가표</button>
+  </div>
+</div>
+
+<div id="tab-calc" class="tab-content active">
+  <div class="calc-wrap" id="calc-wrap"></div>
+</div>
+
+<div id="tab-table" class="tab-content">
+  <div class="calc-block">
+    <div class="company-row" id="company-row"></div>
+    <div class="table-row-triple">
+      <div>
+        <div class="filter-label">지종 검색</div>
+        <input type="text" id="tf-series" placeholder="지종명을 입력해 검색하세요">
+      </div>
+      <div>
+        <div class="filter-label">분류 검색</div>
+        <select id="tf-category"><option value="">전체 분류</option></select>
+      </div>
+      <div>
+        <div class="filter-label">평량 검색</div>
+        <select id="tf-weight"><option value="">전체 평량</option></select>
+      </div>
+    </div>
+  </div>
+  <div class="price-table-wrap" id="price-table-wrap"></div>
+</div>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ============================================================
+   데이터 (내장) — price-data.json 내용과 동일합니다.
+   원본 고시가표가 갱신되면 이 DATA 배열을 재추출해서 통째로 교체해주세요.
+   ============================================================ */
+const DATA = [{"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 210, "p4x6": 263610, "pgj": 184530, "pton": 2929000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 230, "p4x6": 280570, "pgj": 195550, "pton": 2834000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 260, "p4x6": 312030, "pgj": 217310, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 280, "p4x6": 334320, "pgj": 234020, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 300, "p4x6": 359390, "pgj": 250740, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 330, "p4x6": 395610, "pgj": 275810, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 350, "p4x6": 420690, "pgj": 292530, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 400, "p4x6": 479190, "pgj": 334320, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB플러스", "color": null, "weight": 450, "p4x6": 540480, "pgj": 376110, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB라이트", "color": null, "weight": 250, "p4x6": 300890, "pgj": 208950, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB라이트", "color": null, "weight": 270, "p4x6": 323180, "pgj": 225670, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB라이트", "color": null, "weight": 295, "p4x6": 353820, "pgj": 247950, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB라이트", "color": null, "weight": 325, "p4x6": 390040, "pgj": 273030, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB더블랑", "color": null, "weight": 300, "p4x6": 362810, "pgj": 253130, "pton": 2812500}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB더블랑", "color": null, "weight": 350, "p4x6": 424690, "pgj": 295310, "pton": 2812500}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB더블랑", "color": null, "weight": 400, "p4x6": 483750, "pgj": 337500, "pton": 2812500}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB내츄럴", "color": null, "weight": 285, "p4x6": 342680, "pgj": 239600, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB내츄럴", "color": null, "weight": 335, "p4x6": 401180, "pgj": 281390, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB내츄럴", "color": null, "weight": 385, "p4x6": 462480, "pgj": 323180, "pton": 2786000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 240, "p4x6": 194860, "pgj": 136220, "pton": 1892000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 260, "p4x6": 208520, "pgj": 145240, "pton": 1862000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 280, "p4x6": 220080, "pgj": 154060, "pton": 1834000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 300, "p4x6": 235060, "pgj": 163980, "pton": 1822000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 350, "p4x6": 272400, "pgj": 189420, "pton": 1804000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 400, "p4x6": 307350, "pgj": 214440, "pton": 1787000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 450, "p4x6": 343750, "pgj": 239220, "pton": 1772000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 500, "p4x6": 375910, "pgj": 262200, "pton": 1748000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 180, "p4x6": 130340, "pgj": 91420, "pton": 1693000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 240, "p4x6": 153750, "pgj": 107500, "pton": 1493000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 260, "p4x6": 163590, "pgj": 113960, "pton": 1461000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 280, "p4x6": 171160, "pgj": 119780, "pton": 1426000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 300, "p4x6": 181640, "pgj": 126720, "pton": 1408000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 350, "p4x6": 211490, "pgj": 147110, "pton": 1401000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 400, "p4x6": 237220, "pgj": 165480, "pton": 1379000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 450, "p4x6": 264030, "pgj": 183740, "pton": 1361000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 500, "p4x6": 289180, "pgj": 201750, "pton": 1345000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "ACB", "color": null, "weight": 220, "p4x6": 146480, "pgj": 101770, "pton": 1542000}, {"company": "한솔", "category": "산업", "subcategory": "백판지", "series": "FSB", "color": null, "weight": 220, "p4x6": 141810, "pgj": 98540, "pton": 1493000}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 60, "p4x6": 66180, "pgj": 45990, "pton": 2566510}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 70, "p4x6": 65020, "pgj": 45160, "pton": 2160980}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 80, "p4x6": 71410, "pgj": 49600, "pton": 2076580}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 90, "p4x6": 80010, "pgj": 55560, "pton": 2068030}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 100, "p4x6": 88490, "pgj": 61460, "pton": 2058410}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 120, "p4x6": 106170, "pgj": 73750, "pton": 2058410}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 150, "p4x6": 132720, "pgj": 92190, "pton": 2058410}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 180, "p4x6": 159250, "pgj": 110630, "pton": 2058410}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 220, "p4x6": 203390, "pgj": 141280, "pton": 2150710}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴-백상지", "color": null, "weight": 260, "p4x6": 240350, "pgj": 166980, "pton": 2150710}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 60, "p4x6": 69190, "pgj": 48070, "pton": 2683030}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 65, "p4x6": 64350, "pgj": 44700, "pton": 2303180}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 70, "p4x6": 67970, "pgj": 47210, "pton": 2259070}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 80, "p4x6": 74650, "pgj": 51860, "pton": 2170860}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 85, "p4x6": 79160, "pgj": 54980, "pton": 2166510}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "미색백상지", "color": null, "weight": 70, "p4x6": 66970, "pgj": 46510, "pton": 2225760}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "미색백상지", "color": null, "weight": 80, "p4x6": 73550, "pgj": 51090, "pton": 2138870}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "미색백상지", "color": null, "weight": 90, "p4x6": 82410, "pgj": 57230, "pton": 2130040}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "미색백상지", "color": null, "weight": 100, "p4x6": 91140, "pgj": 63300, "pton": 2120170}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "미색백상지", "color": null, "weight": 120, "p4x6": 109360, "pgj": 75960, "pton": 2120170}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "클라우드", "color": null, "weight": 70, "p4x6": 68580, "pgj": 47630, "pton": 2279210}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "클라우드", "color": null, "weight": 80, "p4x6": 81340, "pgj": 56500, "pton": 2365330}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 60, "p4x6": 69190, "pgj": 48070, "pton": 2683030}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 65, "p4x6": 64350, "pgj": 44700, "pton": 2303180}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 70, "p4x6": 67970, "pgj": 47210, "pton": 2259070}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 80, "p4x6": 74650, "pgj": 51860, "pton": 2170860}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 85, "p4x6": 79160, "pgj": 54980, "pton": 2166510}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "뉴클래식", "color": null, "weight": 100, "p4x6": 92510, "pgj": 64250, "pton": 2151900}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "캠퍼스지(S)", "color": null, "weight": 50, "p4x6": 54250, "pgj": 37690, "pton": 2524800}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "캠퍼스지(S)", "color": null, "weight": 55, "p4x6": 55860, "pgj": 38800, "pton": 2363140}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "캠퍼스지(S)", "color": null, "weight": 60, "p4x6": 57000, "pgj": 39610, "pton": 2210480}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "캠퍼스지(S)", "color": null, "weight": 65, "p4x6": 58850, "pgj": 40880, "pton": 2106560}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "캠퍼스지(S)", "color": null, "weight": 70, "p4x6": 60520, "pgj": 42040, "pton": 2011630}, {"company": "한솔", "category": "인쇄", "subcategory": "백상", "series": "캠퍼스지(S)", "color": null, "weight": 80, "p4x6": 66530, "pgj": 46210, "pton": 1934650}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 80, "p4x6": 87150, "pgj": 60540, "pton": 2534380}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 90, "p4x6": 87970, "pgj": 61090, "pton": 2273820}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 100, "p4x6": 88010, "pgj": 61130, "pton": 2047350}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 120, "p4x6": 105600, "pgj": 73350, "pton": 2047350}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 150, "p4x6": 134310, "pgj": 93300, "pton": 2083040}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 180, "p4x6": 161160, "pgj": 111960, "pton": 2083040}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 200, "p4x6": 179070, "pgj": 124390, "pton": 2083040}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 250, "p4x6": 223830, "pgj": 155490, "pton": 2083040}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 밀레니엄아트 Hi-Q 듀오매트 Hi-Q Titan아트ECO Hi-Q Titan매트ECO", "color": null, "weight": 300, "p4x6": 268640, "pgj": 186600, "pton": 2083040}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 미스틱", "color": null, "weight": 83, "p4x6": 88860, "pgj": 61710, "pton": 2490530}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 미스틱", "color": null, "weight": 90, "p4x6": 96360, "pgj": 66920, "pton": 2490530}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 미스틱", "color": null, "weight": 105, "p4x6": 112390, "pgj": 78070, "pton": 2490530}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 미스틱", "color": null, "weight": 128, "p4x6": 137030, "pgj": 95180, "pton": 2490530}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 미스틱", "color": null, "weight": 157, "p4x6": 168080, "pgj": 116750, "pton": 2490530}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 미스틱", "color": null, "weight": 208, "p4x6": 244950, "pgj": 170150, "pton": 2739570}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 매트프리미엄", "color": null, "weight": 107, "p4x6": 101690, "pgj": 70640, "pton": 2211150}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 매트프리미엄", "color": null, "weight": 132, "p4x6": 127640, "pgj": 88670, "pton": 2249590}, {"company": "한솔", "category": "인쇄", "subcategory": "아트", "series": "Hi-Q 매트프리미엄", "color": null, "weight": 161, "p4x6": 155690, "pgj": 108130, "pton": 2249590}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 90, "p4x6": 142180, "pgj": 98740, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 100, "p4x6": 157980, "pgj": 109730, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 120, "p4x6": 189560, "pgj": 131670, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 130, "p4x6": 205360, "pgj": 142660, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 160, "p4x6": 252760, "pgj": 175590, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 190, "p4x6": 300140, "pgj": 208480, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 210, "p4x6": 331730, "pgj": 230460, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "러프그로스", "series": "앙상블 E클래스", "color": "백색,EW", "weight": 230, "p4x6": 363350, "pgj": 252400, "pton": 3675000}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 60, "p4x6": 61210, "pgj": 42530, "pton": 2373620}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 65, "p4x6": 63420, "pgj": 44060, "pton": 2270070}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 70, "p4x6": 66970, "pgj": 46510, "pton": 2225760}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 75, "p4x6": 70350, "pgj": 48880, "pton": 2182320}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 80, "p4x6": 73550, "pgj": 51090, "pton": 2129380}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 90, "p4x6": 82380, "pgj": 57210, "pton": 2120030}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 100, "p4x6": 91140, "pgj": 63300, "pton": 2120030}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 110, "p4x6": 100230, "pgj": 69640, "pton": 2120030}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "백색", "weight": 120, "p4x6": 109350, "pgj": 75950, "pton": 2120030}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 65, "p4x6": 65320, "pgj": 45380, "pton": 2338070}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 70, "p4x6": 68980, "pgj": 47910, "pton": 2292510}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 75, "p4x6": 72460, "pgj": 50340, "pton": 2247750}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 80, "p4x6": 75760, "pgj": 52620, "pton": 2202980}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 90, "p4x6": 84850, "pgj": 58930, "pton": 2193240}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 100, "p4x6": 93870, "pgj": 65200, "pton": 2183630}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 110, "p4x6": 103240, "pgj": 71730, "pton": 2183630}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "뉴플러스", "color": "미색", "weight": 120, "p4x6": 112630, "pgj": 78230, "pton": 2183630}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "고급교과서지", "color": "미색", "weight": 75, "p4x6": 71080, "pgj": 49380, "pton": 2204820}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "하이플러스", "color": "미색", "weight": 90, "p4x6": 86550, "pgj": 60110, "pton": 2237080}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "하이플러스", "color": "미색", "weight": 100, "p4x6": 95740, "pgj": 66500, "pton": 2227210}, {"company": "한솔", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "하이플러스", "color": "미색", "weight": 120, "p4x6": 114880, "pgj": 79790, "pton": 2227210}, {"company": "한솔", "category": "인쇄", "subcategory": "경량코트", "series": "화인코트지", "color": null, "weight": 70, "p4x6": 69990, "pgj": 48610, "pton": 2326090}, {"company": "한솔", "category": "인쇄", "subcategory": "경량코트", "series": "화인코트지", "color": "블루", "weight": 80, "p4x6": 76530, "pgj": 53160, "pton": 2225620}, {"company": "한솔", "category": "인쇄", "subcategory": "경량코트", "series": "화인코트지", "color": "블루", "weight": 95, "p4x6": 88300, "pgj": 61340, "pton": 2162290}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 83, "p4x6": 141590, "pgj": 98350, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 90, "p4x6": 153530, "pgj": 106650, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 100, "p4x6": 170590, "pgj": 118500, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 130, "p4x6": 221760, "pgj": 154050, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 160, "p4x6": 272940, "pgj": 189600, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 190, "p4x6": 324120, "pgj": 225150, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 210, "p4x6": 358240, "pgj": 248850, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 러프", "color": "백색,ExtraWhite", "weight": 240, "p4x6": 409420, "pgj": 284400, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 112, "p4x6": 191060, "pgj": 132720, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 122, "p4x6": 208120, "pgj": 144570, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 145, "p4x6": 247350, "pgj": 171820, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 174, "p4x6": 296820, "pgj": 206190, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 195, "p4x6": 332650, "pgj": 231080, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 203, "p4x6": 346300, "pgj": 240560, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 222, "p4x6": 378710, "pgj": 263070, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에코 (친환경, 재생펄프30%)", "color": "백색,ExtraWhite", "weight": 251, "p4x6": 428180, "pgj": 297440, "pton": 3968600}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 85, "p4x6": 126050, "pgj": 87560, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 105, "p4x6": 155710, "pgj": 108160, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 128, "p4x6": 189820, "pgj": 131860, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 157, "p4x6": 232830, "pgj": 161730, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 209, "p4x6": 309940, "pgj": 215300, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 233, "p4x6": 345530, "pgj": 240030, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 262, "p4x6": 388540, "pgj": 269900, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 300, "p4x6": 444890, "pgj": 309050, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 350, "p4x6": 519040, "pgj": 360560, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 스무드", "color": "ExtraWhite", "weight": 400, "p4x6": 593190, "pgj": 412070, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에그쉘", "color": "ExtraWhite", "weight": 128, "p4x6": 189820, "pgj": 131860, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에그쉘", "color": "ExtraWhite", "weight": 157, "p4x6": 232830, "pgj": 161730, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에그쉘", "color": "ExtraWhite", "weight": 186, "p4x6": 275830, "pgj": 191610, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "러프그로스", "series": "인스퍼 에그쉘", "color": "ExtraWhite", "weight": 233, "p4x6": 345530, "pgj": 240030, "pton": 3450000}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 에그쉘팩", "color": "ExtraWhite,화이트", "weight": 300, "p4x6": 407820, "pgj": 283290, "pton": 3162500}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 에그쉘팩", "color": "ExtraWhite,화이트", "weight": 350, "p4x6": 475790, "pgj": 330510, "pton": 3162500}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 에그쉘팩", "color": "ExtraWhite,화이트", "weight": 400, "p4x6": 543760, "pgj": 377730, "pton": 3162500}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 에그쉘팩 에코 (친환경, 재생펄프15%)", "color": "ExtraWhite", "weight": 300, "p4x6": 462170, "pgj": 321050, "pton": 3584000}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 에그쉘팩 에코 (친환경, 재생펄프15%)", "color": "ExtraWhite", "weight": 350, "p4x6": 539200, "pgj": 374560, "pton": 3584000}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 에그쉘팩 에코 (친환경, 재생펄프15%)", "color": "ExtraWhite", "weight": 400, "p4x6": 616230, "pgj": 428070, "pton": 3584000}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 와일드", "color": "ExtraWhite,화이트", "weight": 300, "p4x6": 469010, "pgj": 325800, "pton": 3637000}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 와일드", "color": "ExtraWhite,화이트", "weight": 350, "p4x6": 547180, "pgj": 380100, "pton": 3637000}, {"company": "한솔", "category": "특수", "subcategory": "패키징", "series": "인스퍼 와일드", "color": "ExtraWhite,화이트", "weight": 400, "p4x6": 625350, "pgj": 434400, "pton": 3637000}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[A군] 백색", "weight": 45, "p4x6": 81780, "pgj": null, "pton": 4228300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[A군] 연노랑색,연분홍색,연연두색,연옥색", "weight": 75, "p4x6": 130910, "pgj": null, "pton": 4060800}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[A군] 분홍색,연두색,옥색,황색", "weight": 90, "p4x6": 145860, "pgj": null, "pton": 3770400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[A군] ExtraWhite,굴색,금발색,노랑색,뉴계란색,뉴크림색,라임옐로우,로사베이지,모래색,민들레색,밍크색,백색,백옥색,벚꽃색,분홍색,아주르블루,연두색,연미색,연보라색,연청색,옥색,우유색,크림색,플라밍고핑크,회색", "weight": 120, "p4x6": 219700, "pgj": null, "pton": 4259300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[A군] ExtraWhite,굴색,금발색,노랑색,뉴계란색,뉴크림색,라임옐로우,로사베이지,모래색,민들레색,밍크색,백색,백옥색,벚꽃색,분홍색,아주르블루,연두색,연미색,연보라색,연청색,옥색,우유색,크림색,플라밍고핑크,회색", "weight": 150, "p4x6": 274630, "pgj": null, "pton": 4259300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[A군] ExtraWhite,굴색,금발색,노랑색,뉴계란색,뉴크림색,라임옐로우,로사베이지,모래색,민들레색,밍크색,백색,백옥색,벚꽃색,분홍색,아주르블루,연두색,연미색,연보라색,연청색,옥색,우유색,크림색,플라밍고핑크,회색", "weight": 200, "p4x6": 366170, "pgj": null, "pton": 4259300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[B군] 노른자색,녹두색,뉴녹두색,뉴밤색,뉴황갈색,라벤더,라일락,라임,시멘트,참외색", "weight": 120, "p4x6": 236210, "pgj": null, "pton": 4579300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[B군] 노른자색,녹두색,뉴녹두색,뉴밤색,뉴황갈색,라벤더,라일락,라임,시멘트,참외색", "weight": 150, "p4x6": 295260, "pgj": null, "pton": 4579300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[B군] 노른자색,녹두색,뉴녹두색,뉴밤색,뉴황갈색,라벤더,라일락,라임,시멘트,참외색", "weight": 200, "p4x6": 393680, "pgj": null, "pton": 4579300}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[C군] 그레이프,뉴주홍색,뉴청록,다크초콜렛,리치네이비,솔잎색,스모키그린,슬레이트블루,썬플라워,오렌지,올드커퍼,주홍색,주황색,차콜,초록색,코랄오렌지,폴라리스블루,풋사과색,황단색", "weight": 120, "p4x6": 254520, "pgj": null, "pton": 4934400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[C군] 그레이프,뉴주홍색,뉴청록,다크초콜렛,리치네이비,솔잎색,스모키그린,슬레이트블루,썬플라워,오렌지,올드커퍼,주홍색,주황색,차콜,초록색,코랄오렌지,폴라리스블루,풋사과색,황단색", "weight": 150, "p4x6": 318160, "pgj": null, "pton": 4934400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[C군] 그레이프,뉴주홍색,뉴청록,다크초콜렛,리치네이비,솔잎색,스모키그린,슬레이트블루,썬플라워,오렌지,올드커퍼,주홍색,주황색,차콜,초록색,코랄오렌지,폴라리스블루,풋사과색,황단색", "weight": 200, "p4x6": 424210, "pgj": null, "pton": 4934400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[D군] 녹청색,다크그레이프,다크플럼,블루그로토,사이엔블루,세피아브라운,스칼렛,연녹청색,와인색,진한녹색,카멜리아로즈,파랑색,파인그로브,프러시안블루,피색,헤이그블루,헤일네이비", "weight": 120, "p4x6": 289090, "pgj": null, "pton": 5604600}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[D군] 녹청색,다크그레이프,다크플럼,블루그로토,사이엔블루,세피아브라운,스칼렛,연녹청색,와인색,진한녹색,카멜리아로즈,파랑색,파인그로브,프러시안블루,피색,헤이그블루,헤일네이비", "weight": 150, "p4x6": 361370, "pgj": null, "pton": 5604600}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[D군] 녹청색,다크그레이프,다크플럼,블루그로토,사이엔블루,세피아브라운,스칼렛,연녹청색,와인색,진한녹색,카멜리아로즈,파랑색,파인그로브,프러시안블루,피색,헤이그블루,헤일네이비", "weight": 200, "p4x6": 481830, "pgj": null, "pton": 5604600}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 80, "p4x6": 172710, "pgj": null, "pton": 5022400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 100, "p4x6": 215880, "pgj": null, "pton": 5022400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 120, "p4x6": 259060, "pgj": null, "pton": 5022400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 150, "p4x6": 323830, "pgj": null, "pton": 5022400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 200, "p4x6": 431770, "pgj": null, "pton": 5022400}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 250, "p4x6": 540060, "pgj": null, "pton": 5025600}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 300, "p4x6": 648080, "pgj": null, "pton": 5025600}, {"company": "한솔", "category": "특수", "subcategory": "색지", "series": "인스퍼 매직칼라", "color": "[E군] 클래식블랙", "weight": 350, "p4x6": 756090, "pgj": null, "pton": 5025600}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 120, "p4x6": 205690, "pgj": null, "pton": 3987600}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 140, "p4x6": 232800, "pgj": null, "pton": 3868500}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 150, "p4x6": 249430, "pgj": null, "pton": 3868500}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 180, "p4x6": 299320, "pgj": null, "pton": 3868500}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 210, "p4x6": 349200, "pgj": null, "pton": 3868500}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 240, "p4x6": 399090, "pgj": null, "pton": 3868500}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 매직쇼핑", "color": "[A군] H-백색,연미,흰색", "weight": 300, "p4x6": 498860, "pgj": null, "pton": 3868500}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[A군] 그라스그린,로즈쿼츠,로즈핑크,미스트,크림,펄,페일그레이,허브그린,화이트", "weight": 250, "p4x6": 480600, "pgj": null, "pton": 4472300}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[A군] 그라스그린,로즈쿼츠,로즈핑크,미스트,크림,펄,페일그레이,허브그린,화이트", "weight": 350, "p4x6": 672850, "pgj": null, "pton": 4472300}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[B군] 그레이,올리브", "weight": 250, "p4x6": 516700, "pgj": null, "pton": 4808200}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[B군] 그레이,올리브", "weight": 350, "p4x6": 723380, "pgj": null, "pton": 4808200}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[C군] 브라이트레드,세레니티,썬플라워,울트라마린,카키,코랄", "weight": 250, "p4x6": 556760, "pgj": null, "pton": 5181000}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[C군] 브라이트레드,세레니티,썬플라워,울트라마린,카키,코랄", "weight": 350, "p4x6": 779470, "pgj": null, "pton": 5181000}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[D군] 바이올렛,코발트", "weight": 250, "p4x6": 632400, "pgj": null, "pton": 5884800}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[D군] 바이올렛,코발트", "weight": 350, "p4x6": 885360, "pgj": null, "pton": 5884800}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처", "color": "[E군] 딥블랙", "weight": 350, "p4x6": 804110, "pgj": null, "pton": 5344800}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처 에코100 (친환경, 재생펄프100%)", "color": "[A군] 화이트", "weight": 250, "p4x6": 416090, "pgj": null, "pton": 3872000}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처 에코100 (친환경, 재생펄프100%)", "color": "[A군] 화이트", "weight": 350, "p4x6": 582530, "pgj": null, "pton": 3872000}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처 에코30 (친환경, 재생펄프30%)", "color": "[A군] 크림,펄,페일그레이", "weight": 350, "p4x6": 706490, "pgj": null, "pton": 4695900}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처 에코30 (친환경, 재생펄프30%)", "color": "[B군] 그레이", "weight": 350, "p4x6": 759550, "pgj": null, "pton": 5048600}, {"company": "한솔", "category": "특수", "subcategory": "프리미엄색지", "series": "인스퍼 시그니처 에코30 (친환경, 재생펄프30%)", "color": "[D군] 코발트", "weight": 350, "p4x6": 929620, "pgj": null, "pton": 6179000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 화일지", "color": "황색", "weight": 120, "p4x6": 152520, "pgj": null, "pton": 2957000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 화일지", "color": "황색", "weight": 170, "p4x6": 216080, "pgj": null, "pton": 2957000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 화일지", "color": "황색", "weight": 195, "p4x6": 247860, "pgj": null, "pton": 2957000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 화일지", "color": "황색", "weight": 230, "p4x6": 292340, "pgj": null, "pton": 2957000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 앨범용지", "color": "[A군] 미색,백색", "weight": 200, "p4x6": 261000, "pgj": null, "pton": 3036000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 앨범용지", "color": "[A군] 미색,백색", "weight": 230, "p4x6": 300150, "pgj": null, "pton": 3036000}, {"company": "한솔", "category": "특수", "subcategory": "기타색지", "series": "인스퍼 앨범용지", "color": "[C군] 황단", "weight": 200, "p4x6": 302610, "pgj": null, "pton": 3520000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 75, "p4x6": 159270, "pgj": null, "pton": 4940300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 110, "p4x6": 207420, "pgj": null, "pton": 4386900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 120, "p4x6": 226240, "pgj": null, "pton": 4386000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 150, "p4x6": 274380, "pgj": null, "pton": 4255400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 180, "p4x6": 329250, "pgj": null, "pton": 4255400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 200, "p4x6": 366040, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 250, "p4x6": 457550, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 300, "p4x6": 549060, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 350, "p4x6": 640580, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[A군] H-백색,건빵색,계란색,굴색,금발색,노랑색,모래색,밍크색,백색,백옥색,벚꽃색,베이지색,벼색,분홍색,연갈색,연두색,연미색,연보라색,연분홍색,연연두색,연황색,옥색,우유색,청회색,크림색,하늘색,회색", "weight": 420, "p4x6": 768690, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 75, "p4x6": 171060, "pgj": null, "pton": 5306100}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 110, "p4x6": 222930, "pgj": null, "pton": 4714900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 120, "p4x6": 243720, "pgj": null, "pton": 4724900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 150, "p4x6": 289870, "pgj": null, "pton": 4495700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 180, "p4x6": 347840, "pgj": null, "pton": 4495700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 200, "p4x6": 389210, "pgj": null, "pton": 4527300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 250, "p4x6": 486510, "pgj": null, "pton": 4527300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 300, "p4x6": 583820, "pgj": null, "pton": 4527300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 350, "p4x6": 681120, "pgj": null, "pton": 4527300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[B군] 노른자색,녹두색,보라색", "weight": 420, "p4x6": 817350, "pgj": null, "pton": 4527300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 75, "p4x6": 181520, "pgj": null, "pton": 5630600}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 110, "p4x6": 236220, "pgj": null, "pton": 4995800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 120, "p4x6": 257340, "pgj": null, "pton": 4989000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 150, "p4x6": 309300, "pgj": null, "pton": 4797000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 180, "p4x6": 371160, "pgj": null, "pton": 4797000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 200, "p4x6": 416340, "pgj": null, "pton": 4842900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 250, "p4x6": 520430, "pgj": null, "pton": 4842900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 300, "p4x6": 624520, "pgj": null, "pton": 4842900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 350, "p4x6": 728600, "pgj": null, "pton": 4842900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[C군] 로즈베이지,솔잎색,슬레이트블루,주홍색,주황색,초록색,풋사과색,황금색,황단색", "weight": 420, "p4x6": 874330, "pgj": null, "pton": 4842900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 75, "p4x6": 221720, "pgj": null, "pton": 6877500}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 110, "p4x6": 274080, "pgj": null, "pton": 5796500}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 120, "p4x6": 298780, "pgj": null, "pton": 5792400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 150, "p4x6": 357220, "pgj": null, "pton": 5540300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 180, "p4x6": 428670, "pgj": null, "pton": 5540300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 200, "p4x6": 484820, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 250, "p4x6": 606020, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 300, "p4x6": 727230, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 350, "p4x6": 848440, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 페스티발", "color": "[D군] 검정색,남색,녹청색,싸이엔블루,오렌지색,진연두색,진홍색,피색,클래식블랙", "weight": 420, "p4x6": 1018120, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 110, "p4x6": 207420, "pgj": null, "pton": 4386900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 120, "p4x6": 226240, "pgj": null, "pton": 4386000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 220, "p4x6": 402650, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 280, "p4x6": 512460, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 300, "p4x6": 549060, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 350, "p4x6": 640580, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 400, "p4x6": 732090, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[A군] H-백색,금발색,백색,아이보리색", "weight": 420, "p4x6": 768690, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[C군] 슬레이트블루", "weight": 350, "p4x6": 728600, "pgj": null, "pton": 4842900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 110, "p4x6": 274080, "pgj": null, "pton": 5796500}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 120, "p4x6": 298780, "pgj": null, "pton": 5792400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 220, "p4x6": 533300, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 280, "p4x6": 678750, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 300, "p4x6": 727230, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 350, "p4x6": 848440, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 400, "p4x6": 969640, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직패브릭", "color": "[D군] 검정색,진곤색,진한밤,체리,피색,클래식블랙", "weight": 420, "p4x6": 1018120, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직한글", "color": "[A군] 백색", "weight": 100, "p4x6": 176240, "pgj": null, "pton": 4099900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직한글", "color": "[A군] 백색", "weight": 200, "p4x6": 352470, "pgj": null, "pton": 4099900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[A군] H-백색,백색,아이보리색,연회색", "weight": 110, "p4x6": 223410, "pgj": null, "pton": 4725000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[A군] H-백색,백색,아이보리색,연회색", "weight": 150, "p4x6": 304650, "pgj": null, "pton": 4725000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[A군] H-백색,백색,아이보리색,연회색", "weight": 160, "p4x6": 324960, "pgj": null, "pton": 4725000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[A군] H-백색,백색,아이보리색,연회색", "weight": 200, "p4x6": 406210, "pgj": null, "pton": 4725000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[A군] H-백색,백색,아이보리색,연회색", "weight": 250, "p4x6": 507760, "pgj": null, "pton": 4725000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[D군] 진한밤,검정색,클래식블랙", "weight": 110, "p4x6": 292920, "pgj": null, "pton": 6195000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[D군] 진한밤,검정색,클래식블랙", "weight": 150, "p4x6": 399440, "pgj": null, "pton": 6195000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[D군] 진한밤,검정색,클래식블랙", "weight": 200, "p4x6": 532580, "pgj": null, "pton": 6195000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[D군] 진한밤,검정색,클래식블랙", "weight": 250, "p4x6": 665730, "pgj": null, "pton": 6195000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 아르테바크", "color": "[D군] 진한밤,검정색,클래식블랙", "weight": 300, "p4x6": 798880, "pgj": null, "pton": 6195000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[A군] H-백색,노랑색,미색,아이보리,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연회색,크림색,회색", "weight": 120, "p4x6": 293860, "pgj": null, "pton": 5696900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[A군] H-백색,노랑색,미색,아이보리,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연회색,크림색,회색", "weight": 200, "p4x6": 489760, "pgj": null, "pton": 5696900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[A군] H-백색,노랑색,미색,아이보리,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연회색,크림색,회색", "weight": 250, "p4x6": 612200, "pgj": null, "pton": 5696900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[A군] H-백색,노랑색,미색,아이보리,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연회색,크림색,회색", "weight": 300, "p4x6": 587700, "pgj": null, "pton": 4557400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[A군] H-백색,노랑색,미색,아이보리,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연회색,크림색,회색", "weight": 350, "p4x6": 685650, "pgj": null, "pton": 4557400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 120, "p4x6": 353910, "pgj": null, "pton": 6861100}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 300, "p4x6": 707810, "pgj": null, "pton": 5488800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 350, "p4x6": 825780, "pgj": null, "pton": 5488800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[C군] 갈색,남색,빨강색,자주색,초록색", "weight": 120, "p4x6": 381110, "pgj": null, "pton": 7388400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[C군] 갈색,남색,빨강색,자주색,초록색", "weight": 300, "p4x6": 762200, "pgj": null, "pton": 5910600}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[C군] 갈색,남색,빨강색,자주색,초록색", "weight": 350, "p4x6": 889240, "pgj": null, "pton": 5910600}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[D군] 검정색,진곤색,진한남색,진홍색", "weight": 120, "p4x6": 412760, "pgj": null, "pton": 8002000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[D군] 검정색,진곤색,진한남색,진홍색", "weight": 300, "p4x6": 825520, "pgj": null, "pton": 6401600}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직매칭", "color": "[D군] 검정색,진곤색,진한남색,진홍색", "weight": 350, "p4x6": 963110, "pgj": null, "pton": 6401600}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[A군] H-백색,백색,베이지,아이보리,연미색,우유색,회색", "weight": 120, "p4x6": 226240, "pgj": null, "pton": 4386000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[A군] H-백색,백색,베이지,아이보리,연미색,우유색,회색", "weight": 220, "p4x6": 402650, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[A군] H-백색,백색,베이지,아이보리,연미색,우유색,회색", "weight": 400, "p4x6": 732090, "pgj": null, "pton": 4257800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[D군] 주홍,진곤색,진한밤색,피색", "weight": 120, "p4x6": 298780, "pgj": null, "pton": 5792400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[D군] 주홍,진곤색,진한밤색,피색", "weight": 220, "p4x6": 533300, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[D군] 주홍,진곤색,진한밤색,피색", "weight": 400, "p4x6": 969640, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[E군] 검정색,클래식블랙", "weight": 120, "p4x6": 298780, "pgj": null, "pton": 5792400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[E군] 검정색,클래식블랙", "weight": 220, "p4x6": 533300, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보", "color": "[E군] 검정색,클래식블랙", "weight": 400, "p4x6": 969640, "pgj": null, "pton": 5639400}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직엠보(양)", "color": "[A군] H-백색", "weight": 120, "p4x6": 248880, "pgj": null, "pton": 4825000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 180, "p4x6": 408350, "pgj": null, "pton": 5277700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 200, "p4x6": 453720, "pgj": null, "pton": 5277700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 220, "p4x6": 499100, "pgj": null, "pton": 5277700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 250, "p4x6": 567160, "pgj": null, "pton": 5277700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 280, "p4x6": 635210, "pgj": null, "pton": 5277700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 300, "p4x6": 544460, "pgj": null, "pton": 4222100}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[A군] H-백색,노랑색,미색,백색,아이보리색,연갈색,연미색,연보라색,연분홍색,연연두색,연옥색,연청색,연회색,옥색,크림색,회색", "weight": 350, "p4x6": 635210, "pgj": null, "pton": 4222100}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 180, "p4x6": 491800, "pgj": null, "pton": 6356200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 200, "p4x6": 546440, "pgj": null, "pton": 6356200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 220, "p4x6": 601090, "pgj": null, "pton": 6356200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 250, "p4x6": 683050, "pgj": null, "pton": 6356200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 280, "p4x6": 765020, "pgj": null, "pton": 6356200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 300, "p4x6": 655720, "pgj": null, "pton": 5084900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[B군] 녹청색,보라색,연두색,오렌지색,주홍색,참외색,청적색,코스모스색", "weight": 350, "p4x6": 765010, "pgj": null, "pton": 5084900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 180, "p4x6": 529590, "pgj": null, "pton": 6844700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 200, "p4x6": 588440, "pgj": null, "pton": 6844700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 220, "p4x6": 647280, "pgj": null, "pton": 6844700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 250, "p4x6": 735550, "pgj": null, "pton": 6844700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 280, "p4x6": 823820, "pgj": null, "pton": 6844700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 300, "p4x6": 706120, "pgj": null, "pton": 5475700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[C군] 갈색,남색,빨강색,자주색,청회색,초록색", "weight": 350, "p4x6": 823810, "pgj": null, "pton": 5475700}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 180, "p4x6": 589660, "pgj": null, "pton": 7621000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 200, "p4x6": 655180, "pgj": null, "pton": 7621000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 220, "p4x6": 720700, "pgj": null, "pton": 7621000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 250, "p4x6": 818970, "pgj": null, "pton": 7621000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 280, "p4x6": 917250, "pgj": null, "pton": 7621000}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 300, "p4x6": 786220, "pgj": null, "pton": 6096800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직터치", "color": "[D군] 검정색,진곤색,진한남색,진홍색,청록색", "weight": 350, "p4x6": 917250, "pgj": null, "pton": 6096800}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[A군] H-백색,노랑색,아이보리색,연회색,회색", "weight": 180, "p4x6": 457960, "pgj": null, "pton": 5918900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[A군] H-백색,노랑색,아이보리색,연회색,회색", "weight": 200, "p4x6": 508850, "pgj": null, "pton": 5918900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[A군] H-백색,노랑색,아이보리색,연회색,회색", "weight": 250, "p4x6": 636060, "pgj": null, "pton": 5918900}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[B군] 고동,녹청,보라,오렌지,참외", "weight": 180, "p4x6": 551550, "pgj": null, "pton": 7128500}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[B군] 고동,녹청,보라,오렌지,참외", "weight": 200, "p4x6": 612840, "pgj": null, "pton": 7128500}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[B군] 고동,녹청,보라,오렌지,참외", "weight": 250, "p4x6": 766050, "pgj": null, "pton": 7128500}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[C군] 빨강,초록", "weight": 180, "p4x6": 593940, "pgj": null, "pton": 7676300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[C군] 빨강,초록", "weight": 200, "p4x6": 659930, "pgj": null, "pton": 7676300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[C군] 빨강,초록", "weight": 250, "p4x6": 824920, "pgj": null, "pton": 7676300}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[D군] 파랑색,진브라운,진한남색,검정색", "weight": 180, "p4x6": 707590, "pgj": null, "pton": 9145200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[D군] 파랑색,진브라운,진한남색,검정색", "weight": 200, "p4x6": 786220, "pgj": null, "pton": 9145200}, {"company": "한솔", "category": "특수", "subcategory": "무늬지", "series": "인스퍼 매직펠트(양면)", "color": "[D군] 파랑색,진브라운,진한남색,검정색", "weight": 250, "p4x6": 982770, "pgj": null, "pton": 9145200}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 매직콤마 (친환경, 재생펄프30%)", "color": "백색,베이지색,아이보리색", "weight": 120, "p4x6": 267310, "pgj": null, "pton": 5182300}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 매직콤마 (친환경, 재생펄프30%)", "color": "백색,베이지색,아이보리색", "weight": 220, "p4x6": 490070, "pgj": null, "pton": 5182300}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 매직콤마 (친환경, 재생펄프30%)", "color": "백색,베이지색,아이보리색", "weight": 300, "p4x6": 668280, "pgj": null, "pton": 5182300}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 매직콤마 (친환경, 재생펄프30%)", "color": "백색,베이지색,아이보리색", "weight": 350, "p4x6": 670520, "pgj": null, "pton": 4456800}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 매직코튼", "color": "백색,백옥색,베이지색,연미색,연옥색", "weight": 120, "p4x6": 257730, "pgj": null, "pton": 4996500}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 매직코튼", "color": "백색,백옥색,베이지색,연미색,연옥색", "weight": 200, "p4x6": 429550, "pgj": null, "pton": 4996500}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 알로에지 (친환경, 재생펄프30%)", "color": "백색", "weight": 140, "p4x6": 270310, "pgj": null, "pton": 4491700}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 알로에지 (친환경, 재생펄프30%)", "color": "백색", "weight": 300, "p4x6": 499330, "pgj": null, "pton": 3872100}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 알로에지 (친환경, 재생펄프30%)", "color": "백색", "weight": 350, "p4x6": 582550, "pgj": null, "pton": 3872100}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 버드나무지 (친환경, 재생펄프30%)", "color": "백색", "weight": 160, "p4x6": 308930, "pgj": null, "pton": 4491700}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 버드나무지 (친환경, 재생펄프30%)", "color": "백색", "weight": 350, "p4x6": 582550, "pgj": null, "pton": 3872100}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 녹차지 (친환경, 재생펄프15%)", "color": "백색", "weight": 140, "p4x6": 232810, "pgj": null, "pton": 3868600}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 녹차지 (친환경, 재생펄프15%)", "color": "백색", "weight": 300, "p4x6": 430060, "pgj": null, "pton": 3335000}, {"company": "한솔", "category": "특수", "subcategory": "소재지", "series": "인스퍼 녹차지 (친환경, 재생펄프15%)", "color": "백색", "weight": 350, "p4x6": 501740, "pgj": null, "pton": 3335000}, {"company": "한솔", "category": "특수", "subcategory": "워터마크지", "series": "인스퍼 매직쉐도우", "color": "미색,백색,연미색,연청색,진주색", "weight": 90, "p4x6": 181890, "pgj": null, "pton": 4701600}, {"company": "한솔", "category": "특수", "subcategory": "워터마크지", "series": "인스퍼 매직쉐도우", "color": "미색,백색,연미색,연청색,진주색", "weight": 110, "p4x6": 206170, "pgj": null, "pton": 4360300}, {"company": "한솔", "category": "특수", "subcategory": "워터마크지", "series": "인스퍼 매직쉐도우", "color": "미색,백색,연미색,연청색,진주색", "weight": 200, "p4x6": 370950, "pgj": null, "pton": 4314900}, {"company": "한솔", "category": "특수", "subcategory": "워터마크지", "series": "인스퍼 매직쉐도우", "color": "연미색", "weight": 120, "p4x6": 224300, "pgj": null, "pton": 4348400}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[A군] 석영,슈가블루,슈가핑크,연옥,연한금색,연황색,연회색,오팔색,은색,크림색", "weight": 120, "p4x6": 491880, "pgj": null, "pton": 9535900}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[A군] 석영,슈가블루,슈가핑크,연옥,연한금색,연황색,연회색,오팔색,은색,크림색", "weight": 220, "p4x6": 800680, "pgj": null, "pton": 8466800}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[A군] 석영,슈가블루,슈가핑크,연옥,연한금색,연황색,연회색,오팔색,은색,크림색", "weight": 250, "p4x6": 909870, "pgj": null, "pton": 8466800}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[A군] 석영,슈가블루,슈가핑크,연옥,연한금색,연황색,연회색,오팔색,은색,크림색", "weight": 350, "p4x6": 1062510, "pgj": null, "pton": 7062300}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[B군] 깜깜한밤색,루비색,사파이어색,소프트파우더,아이스골드,화이트골드", "weight": 120, "p4x6": 543290, "pgj": null, "pton": 10532600}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[B군] 깜깜한밤색,루비색,사파이어색,소프트파우더,아이스골드,화이트골드", "weight": 220, "p4x6": 854430, "pgj": null, "pton": 9035200}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[B군] 깜깜한밤색,루비색,사파이어색,소프트파우더,아이스골드,화이트골드", "weight": 250, "p4x6": 970950, "pgj": null, "pton": 9035200}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[B군] 깜깜한밤색,루비색,사파이어색,소프트파우더,아이스골드,화이트골드", "weight": 350, "p4x6": 1136340, "pgj": null, "pton": 7553000}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[C군] 공작석색,구리색,금색,청동색", "weight": 120, "p4x6": 594590, "pgj": null, "pton": 11527100}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[C군] 공작석색,구리색,금색,청동색", "weight": 220, "p4x6": 955530, "pgj": null, "pton": 10104200}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[C군] 공작석색,구리색,금색,청동색", "weight": 250, "p4x6": 1085830, "pgj": null, "pton": 10104200}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[C군] 공작석색,구리색,금색,청동색", "weight": 350, "p4x6": 1168430, "pgj": null, "pton": 7766300}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[D군] 군청색,루비레드,새틴블랙,황금색", "weight": 120, "p4x6": 654020, "pgj": null, "pton": 12679300}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[D군] 군청색,루비레드,새틴블랙,황금색", "weight": 220, "p4x6": 1051050, "pgj": null, "pton": 11114300}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[D군] 군청색,루비레드,새틴블랙,황금색", "weight": 250, "p4x6": 1194380, "pgj": null, "pton": 11114300}, {"company": "한솔", "category": "특수", "subcategory": "펄지", "series": "인스퍼 오로", "color": "[D군] 군청색,루비레드,새틴블랙,황금색", "weight": 350, "p4x6": 1307530, "pgj": null, "pton": 8690900}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[A군] 백색,H-백색,베이지,아이보리,연미색,우유색,회색", "weight": 120, "p4x6": 491880, "pgj": null, "pton": 9535900}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[A군] 백색,H-백색,베이지,아이보리,연미색,우유색,회색", "weight": 220, "p4x6": 800680, "pgj": null, "pton": 8466800}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[A군] 백색,H-백색,베이지,아이보리,연미색,우유색,회색", "weight": 370, "p4x6": 1123230, "pgj": null, "pton": 7062300}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[A군] 백색,H-백색,베이지,아이보리,연미색,우유색,회색", "weight": 400, "p4x6": 1214300, "pgj": null, "pton": 7062300}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[C군] 슬레이트블루", "weight": 120, "p4x6": 594590, "pgj": null, "pton": 11527100}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[C군] 슬레이트블루", "weight": 220, "p4x6": 955530, "pgj": null, "pton": 10104200}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[C군] 슬레이트블루", "weight": 370, "p4x6": 1235190, "pgj": null, "pton": 7766300}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[C군] 슬레이트블루", "weight": 400, "p4x6": 1335350, "pgj": null, "pton": 7766300}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[D군] 진곤색,주홍,피색,진한밤색,초코브라운", "weight": 120, "p4x6": 654020, "pgj": null, "pton": 12679300}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[D군] 진곤색,주홍,피색,진한밤색,초코브라운", "weight": 220, "p4x6": 1051050, "pgj": null, "pton": 11114300}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[D군] 진곤색,주홍,피색,진한밤색,초코브라운", "weight": 370, "p4x6": 1382100, "pgj": null, "pton": 8690000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[D군] 진곤색,주홍,피색,진한밤색,초코브라운", "weight": 400, "p4x6": 1494170, "pgj": null, "pton": 8690000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[E군] 검정색,클래식블랙", "weight": 120, "p4x6": 605170, "pgj": null, "pton": 11732200}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[E군] 검정색,클래식블랙", "weight": 220, "p4x6": 972530, "pgj": null, "pton": 10284000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[E군] 검정색,클래식블랙", "weight": 370, "p4x6": 1257170, "pgj": null, "pton": 7904500}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직엠보 코팅(글로스,매트)", "color": "[E군] 검정색,클래식블랙", "weight": 400, "p4x6": 1359110, "pgj": null, "pton": 7904500}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 소프트터치", "color": "[A군] 화이트", "weight": 150, "p4x6": 869800, "pgj": null, "pton": 13490000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 소프트터치", "color": "[A군] 화이트", "weight": 250, "p4x6": 1348230, "pgj": null, "pton": 12546000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 소프트터치", "color": "[D군] 블랙,레드,네이비", "weight": 150, "p4x6": 915580, "pgj": null, "pton": 14200000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 소프트터치", "color": "[D군] 블랙,레드,네이비", "weight": 250, "p4x6": 1419160, "pgj": null, "pton": 13206000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(단면)", "color": "[A군] H-백,아이보리", "weight": 120, "p4x6": 524330, "pgj": null, "pton": 10165000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(단면)", "color": "[A군] H-백,아이보리", "weight": 370, "p4x6": 1191250, "pgj": null, "pton": 7490000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(단면)", "color": "[D군] 검정,네이비,레드,클래식블랙", "weight": 120, "p4x6": 579520, "pgj": null, "pton": 11235000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(단면)", "color": "[D군] 검정,네이비,레드,클래식블랙", "weight": 250, "p4x6": 1057870, "pgj": null, "pton": 9844000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(단면)", "color": "[D군] 검정,네이비,레드,클래식블랙", "weight": 370, "p4x6": 1361430, "pgj": null, "pton": 8560000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(양면)", "color": "[A군] H-백,아이보리", "weight": 250, "p4x6": 1057870, "pgj": null, "pton": 9844000}, {"company": "한솔", "category": "특수", "subcategory": "스페셜", "series": "인스퍼 매직실크(양면)", "color": "[D군] 검정,네이비,레드", "weight": 250, "p4x6": 1172850, "pgj": null, "pton": 10914000}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 70, "p4x6": 148770, "pgj": null, "pton": 4944050}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 75, "p4x6": 159390, "pgj": null, "pton": 4944050}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 90, "p4x6": 180680, "pgj": null, "pton": 4670420}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 100, "p4x6": 188740, "pgj": null, "pton": 4390710}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 110, "p4x6": 207610, "pgj": null, "pton": 4390710}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 120, "p4x6": 226480, "pgj": null, "pton": 4390710}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 140, "p4x6": 256370, "pgj": null, "pton": 4260090}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 150, "p4x6": 274680, "pgj": null, "pton": 4260090}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 200, "p4x6": 366320, "pgj": null, "pton": 4261030}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 계란,백색,특백색,베이지,아이보리,연갈,연미,연보라,연분홍,연연두,연옥,연황,옥색,은회,쥐색,크림,하늘,호두,황갈,황색,회색", "weight": 220, "p4x6": 402960, "pgj": null, "pton": 4261030}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[A군] 91백색/205백색/220백색", "weight": 350, "p4x6": 641070, "pgj": null, "pton": 4261030}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 110, "p4x6": 223650, "pgj": null, "pton": 4729850}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 120, "p4x6": 243980, "pgj": null, "pton": 4729850}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 150, "p4x6": 290180, "pgj": null, "pton": 4500390}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 200, "p4x6": 389600, "pgj": null, "pton": 4531790}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 110, "p4x6": 240740, "pgj": null, "pton": 5091460}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 120, "p4x6": 262630, "pgj": null, "pton": 5091460}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[B군] 보라,은행,진갈,진황,진회,시멘트,주홍,진곤,청색,황금", "weight": 200, "p4x6": 424470, "pgj": null, "pton": 4937380}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[D군] 남색,오렌지,적색,진연두,진홍,진황토,초코렛,흑색,다크블루", "weight": 110, "p4x6": 274550, "pgj": null, "pton": 5806450}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[D군] 남색,오렌지,적색,진연두,진홍,진황토,초코렛,흑색,다크블루", "weight": 120, "p4x6": 299510, "pgj": null, "pton": 5806450}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "레자크", "color": "[D군] 남색,오렌지,적색,진연두,진홍,진황토,초코렛,흑색,다크블루", "weight": 200, "p4x6": 486240, "pgj": null, "pton": 5655840}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[A군] 백색,내츄럴화이트 /  /  / 120·350g/㎡은 편면", "weight": 120, "p4x6": 294920, "pgj": null, "pton": 5717400}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[A군] 백색,내츄럴화이트 /  /  / 120·350g/㎡은 편면", "weight": 200, "p4x6": 491530, "pgj": null, "pton": 5717400}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[A군] 백색,내츄럴화이트 /  /  / 120·350g/㎡은 편면", "weight": 300, "p4x6": 737290, "pgj": null, "pton": 5717400}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[A군] 백색,내츄럴화이트 /  /  / 120·350g/㎡은 편면", "weight": 350, "p4x6": 860180, "pgj": null, "pton": 5717400}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[A군] 아이보리,미스티그레이,스톤그레이", "weight": 200, "p4x6": 491530, "pgj": null, "pton": 5717400}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[B군] 카키", "weight": 200, "p4x6": 577320, "pgj": null, "pton": 6715280}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "벨라NEW", "color": "[C군] 프리미어레드,진곤,흑색", "weight": 200, "p4x6": 601800, "pgj": null, "pton": 7000000}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[A군] 대나무,물색,백합,벚꽃,복숭아,빙산,연보라,연분홍,연연두,연옥,연청,옥색,이끼,크림,코스모스,프렌치블루", "weight": 180, "p4x6": 420110, "pgj": null, "pton": 5429680}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[A군] 백색,아이보리", "weight": 200, "p4x6": 466790, "pgj": null, "pton": 4343750}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[A군] 백색,아이보리", "weight": 250, "p4x6": 583490, "pgj": null, "pton": 4343750}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[A군] 백색,아이보리", "weight": 300, "p4x6": 560150, "pgj": null, "pton": 4343750}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[A군] 백색,아이보리", "weight": 350, "p4x6": 653510, "pgj": null, "pton": 4343750}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[B군] 오렌지,청색,황색", "weight": 180, "p4x6": 505930, "pgj": null, "pton": 6538840}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[C군] 밤색,보라,연두,주홍", "weight": 180, "p4x6": 544650, "pgj": null, "pton": 7039180}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[D군] 연진곤,연진홍,흑색", "weight": 180, "p4x6": 589900, "pgj": null, "pton": 7624030}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마매이드", "color": "[D군] 진홍,진곤", "weight": 200, "p4x6": 655440, "pgj": null, "pton": 7624030}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[A군] 계란,라벤더,백색,백회,분홍,애쉬그레이,연보라,연분홍,연연두,연옥,연청,옥색,은회,크림,황록,황색,황회,회갈,회황,흰보라,샴페인로즈,몬테베르데,위터링블루,아이보리,시트러스옐로우,미스티그레이,스톤그레이(NEW),벨벳오키드(주문)", "weight": 120, "p4x6": 219940, "pgj": null, "pton": 4263880}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[A군] 계란,라벤더,백색,백회,분홍,애쉬그레이,연보라,연분홍,연연두,연옥,연청,옥색,은회,크림,황록,황색,황회,회갈,회황,흰보라,샴페인로즈,몬테베르데,위터링블루,아이보리,시트러스옐로우,미스티그레이,스톤그레이(NEW),벨벳오키드(주문)", "weight": 350, "p4x6": 641500, "pgj": null, "pton": 4263880}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[B군] 노른자,녹두,시멘트,연노랑,오렌지,청색,파랑,해바라기,황매화,진회(NEW)", "weight": 120, "p4x6": 236480, "pgj": null, "pton": 4584550}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[B군] 노른자,녹두,시멘트,연노랑,오렌지,청색,파랑,해바라기,황매화,진회(NEW)", "weight": 350, "p4x6": 689740, "pgj": null, "pton": 4584550}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[C군] 밤색,보라,청회,청록,연두,주홍,황토,청보라,초록,황갈,트로피칼코랄,샤르트뢰즈,에머랄드,크레이지오렌지(NEW),울트라바이올렛(주문)", "weight": 120, "p4x6": 254810, "pgj": null, "pton": 4939880}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[C군] 밤색,보라,청회,청록,연두,주홍,황토,청보라,초록,황갈,트로피칼코랄,샤르트뢰즈,에머랄드,크레이지오렌지(NEW),울트라바이올렛(주문)", "weight": 350, "p4x6": 743200, "pgj": null, "pton": 4939880}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[D군] 남색,연군청,연지,자주,적색,진곤,진청회,진홍,청적,차이나레드,커피,마린,브리티쉬그린,터쿼이즈블루(NEW)", "weight": 120, "p4x6": 291470, "pgj": null, "pton": 5650510}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[D군] 남색,연군청,연지,자주,적색,진곤,진청회,진홍,청적,차이나레드,커피,마린,브리티쉬그린,터쿼이즈블루(NEW)", "weight": 350, "p4x6": 850110, "pgj": null, "pton": 5650510}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 110, "p4x6": 237730, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 120, "p4x6": 259340, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 150, "p4x6": 324170, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 180, "p4x6": 389010, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 200, "p4x6": 432230, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 250, "p4x6": 540290, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 300, "p4x6": 648350, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 흑색", "weight": 350, "p4x6": 756400, "pgj": null, "pton": 5027650}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 쏠블랙", "weight": 350, "p4x6": 656360, "pgj": null, "pton": 4364250}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "밍크지", "color": "[특] 쏠블랙", "weight": 400, "p4x6": 750130, "pgj": null, "pton": 4364250}, {"company": "삼화", "category": "특수", "subcategory": "워터마크지", "series": "레이드", "color": "백색,연미,연분홍,연연두,연옥,연청,진주", "weight": 90, "p4x6": 200240, "pgj": null, "pton": 5176010}, {"company": "삼화", "category": "특수", "subcategory": "워터마크지", "series": "레이드", "color": "백색,연미,연분홍,연연두,연옥,연청,진주", "weight": 120, "p4x6": 246750, "pgj": null, "pton": 4783550}, {"company": "삼화", "category": "특수", "subcategory": "워터마크지", "series": "레이드", "color": "백색,연미,연분홍,연연두,연옥,연청,진주", "weight": 180, "p4x6": 370120, "pgj": null, "pton": 4783550}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "팬시카드", "color": "[A군] 아이보리", "weight": 220, "p4x6": 490130, "pgj": null, "pton": 5182870}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "팬시카드", "color": "[A군] 백색", "weight": 200, "p4x6": 445580, "pgj": null, "pton": 5182870}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "팬시카드", "color": "[A군] 백색", "weight": 350, "p4x6": 779760, "pgj": null, "pton": 5182870}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "팬시카드", "color": "[D군] 진곤", "weight": 180, "p4x6": 619400, "pgj": null, "pton": 8005240}, {"company": "삼화", "category": "특수", "subcategory": "화일", "series": "화일지", "color": "황색", "weight": 120, "p4x6": 152700, "pgj": null, "pton": 2960250}, {"company": "삼화", "category": "특수", "subcategory": "화일", "series": "화일지", "color": "황색", "weight": 170, "p4x6": 216320, "pgj": null, "pton": 2960250}, {"company": "삼화", "category": "특수", "subcategory": "화일", "series": "화일지", "color": "황색", "weight": 195, "p4x6": 248130, "pgj": null, "pton": 2960250}, {"company": "삼화", "category": "특수", "subcategory": "화일", "series": "화일지", "color": "황색", "weight": 235, "p4x6": 299030, "pgj": null, "pton": 2960250}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "색지", "color": "분홍,연두,옥색,황색", "weight": 70, "p4x6": 122350, "pgj": null, "pton": 4066030}, {"company": "삼화", "category": "특수", "subcategory": "색지", "series": "색지", "color": "분홍,연두,옥색,황색", "weight": 90, "p4x6": 146050, "pgj": 97240, "pton": 3775090}, {"company": "삼화", "category": "특수", "subcategory": "앨범", "series": "앨범지", "color": "미색,백색", "weight": 200, "p4x6": 261080, "pgj": null, "pton": 3036810}, {"company": "삼화", "category": "특수", "subcategory": "앨범", "series": "앨범지", "color": "미색,백색", "weight": 230, "p4x6": 300240, "pgj": null, "pton": 3036810}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "탄트", "color": "[A군] 연옥,연회,연분홍,아이보리,백색", "weight": 120, "p4x6": 294080, "pgj": null, "pton": 5701160}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "탄트", "color": "[A군] 아이보리,백색", "weight": 200, "p4x6": 490130, "pgj": null, "pton": 5701160}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "탄트", "color": "[A군] 아이보리", "weight": 250, "p4x6": 612670, "pgj": null, "pton": 5701160}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "탄트", "color": "[B군] 노랑", "weight": 120, "p4x6": 354150, "pgj": null, "pton": 6865780}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "탄트", "color": "[C군] 녹색", "weight": 120, "p4x6": 381250, "pgj": null, "pton": 7391130}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "탄트", "color": "[D군] 진홍", "weight": 120, "p4x6": 412930, "pgj": null, "pton": 8005240}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마크Ⅱ", "color": "백색", "weight": 120, "p4x6": 243930, "pgj": null, "pton": 4728900}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마크Ⅱ", "color": "백색", "weight": 200, "p4x6": 406550, "pgj": null, "pton": 4728900}, {"company": "삼화", "category": "특수", "subcategory": "무늬지", "series": "마크Ⅱ", "color": "백색", "weight": 300, "p4x6": 609820, "pgj": null, "pton": 4728900}, {"company": "삼화", "category": "특수", "subcategory": "소재지", "series": "에코하임", "color": "백색", "weight": 120, "p4x6": 237020, "pgj": null, "pton": 4594890}, {"company": "삼화", "category": "특수", "subcategory": "소재지", "series": "에코하임", "color": "백색", "weight": 220, "p4x6": 434530, "pgj": null, "pton": 4594890}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "에코패키토(eco-Pacchetto)", "color": "백색,웜화이트", "weight": 300, "p4x6": 379170, "pgj": 263390, "pton": 2940300}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "에코패키토(eco-Pacchetto)", "color": "백색,웜화이트", "weight": 350, "p4x6": 442360, "pgj": 307290, "pton": 2940300}, {"company": "삼화", "category": "특수", "subcategory": "쇼핑백", "series": "비스포크쇼핑_자연스러운 면감 / 비스포크쇼핑(S)_부드러운 면감", "color": null, "weight": 140, "p4x6": 208050, "pgj": 144520, "pton": 3457140}, {"company": "삼화", "category": "특수", "subcategory": "쇼핑백", "series": "비스포크쇼핑_자연스러운 면감 / 비스포크쇼핑(S)_부드러운 면감", "color": null, "weight": 160, "p4x6": 237770, "pgj": 165170, "pton": 3457140}, {"company": "삼화", "category": "특수", "subcategory": "쇼핑백", "series": "비스포크쇼핑_자연스러운 면감 / 비스포크쇼핑(S)_부드러운 면감", "color": null, "weight": 180, "p4x6": 267490, "pgj": 185820, "pton": 3457140}, {"company": "삼화", "category": "특수", "subcategory": "쇼핑백", "series": "비스포크쇼핑_자연스러운 면감 / 비스포크쇼핑(S)_부드러운 면감", "color": null, "weight": 200, "p4x6": 297210, "pgj": 206460, "pton": 3457140}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄A군] 석영,오팔,은색", "weight": 120, "p4x6": 491520, "pgj": null, "pton": 9528750}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄A군] 석영,오팔,은색", "weight": 200, "p4x6": 738370, "pgj": null, "pton": 8588580}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄A군] 석영,오팔,은색", "weight": 250, "p4x6": 891560, "pgj": null, "pton": 8296370}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄B군] 세피아", "weight": 120, "p4x6": 543940, "pgj": null, "pton": 10545150}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄B군] 세피아", "weight": 200, "p4x6": 800630, "pgj": null, "pton": 9312770}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄B군] 세피아", "weight": 250, "p4x6": 959820, "pgj": null, "pton": 8931620}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄C군] 금색", "weight": 120, "p4x6": 596370, "pgj": null, "pton": 11561550}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄C군] 금색", "weight": 200, "p4x6": 890190, "pgj": null, "pton": 10354580}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[펄C군] 금색", "weight": 250, "p4x6": 1071780, "pgj": null, "pton": 9973430}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[메탈A군] 다이아몬드", "weight": 120, "p4x6": 511180, "pgj": null, "pton": 9909900}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[메탈A군] 다이아몬드", "weight": 200, "p4x6": 771130, "pgj": null, "pton": 8969730}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[메탈A군] 다이아몬드", "weight": 250, "p4x6": 932520, "pgj": null, "pton": 8677520}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[메탈C군] 브론즈,블루다이아몬드", "weight": 120, "p4x6": 616030, "pgj": null, "pton": 11942700}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[메탈C군] 브론즈,블루다이아몬드", "weight": 200, "p4x6": 922960, "pgj": null, "pton": 10735730}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "스타라이트", "color": "[메탈C군] 브론즈,블루다이아몬드", "weight": 250, "p4x6": 1112740, "pgj": null, "pton": 10354580}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "더블라이트/오션라이트(NEW)", "color": "[더블] 블루문,블랙선셋", "weight": 120, "p4x6": 928480, "pgj": null, "pton": 18000000}, {"company": "삼화", "category": "특수", "subcategory": "펄지", "series": "더블라이트/오션라이트(NEW)", "color": "[오션] 초코릿,다크초콜릿", "weight": 120, "p4x6": 1031650, "pgj": null, "pton": 20000000}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 105, "p4x6": 197010, "pgj": 136860, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 130, "p4x6": 243920, "pgj": 169440, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 160, "p4x6": 300210, "pgj": 208540, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 190, "p4x6": 356500, "pgj": 247650, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 210, "p4x6": 394030, "pgj": 273710, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 240, "p4x6": 450320, "pgj": 312820, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데부 내츄럴/울트라화이트", "color": null, "weight": 310, "p4x6": null, "pgj": 404050, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데뷰 PAPERBACK", "color": null, "weight": 122, "p4x6": 228910, "pgj": 159010, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데뷰 PAPERBACK", "color": null, "weight": 147, "p4x6": 275820, "pgj": 191600, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데뷰 PAPERBACK", "color": null, "weight": 177, "p4x6": 332110, "pgj": 230700, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데뷰 PAPERBACK", "color": null, "weight": 208, "p4x6": 390270, "pgj": 271110, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데뷰 PAPERBACK", "color": null, "weight": 226, "p4x6": 424050, "pgj": 294570, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "러프그로스", "series": "랑데뷰 PAPERBACK", "color": null, "weight": 254, "p4x6": 476580, "pgj": 331060, "pton": 4365010}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 125, "p4x6": 171460, "pgj": 119110, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 155, "p4x6": 212610, "pgj": 147690, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 185, "p4x6": 253770, "pgj": 176280, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 205, "p4x6": 281200, "pgj": 195340, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 230, "p4x6": 315490, "pgj": 219160, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 300, "p4x6": 411510, "pgj": 285860, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 350, "p4x6": 480100, "pgj": 333500, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 0FELT", "color": null, "weight": 400, "p4x6": 548680, "pgj": 381150, "pton": 3191100}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 C1S", "color": null, "weight": 300, "p4x6": 499770, "pgj": 347170, "pton": 3875480}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 C1S", "color": null, "weight": 350, "p4x6": 583060, "pgj": 405030, "pton": 3875480}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "PAPERBACK30 C1S", "color": null, "weight": 400, "p4x6": 666360, "pgj": 462890, "pton": 3875480}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 128, "p4x6": 184320, "pgj": 128040, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 158, "p4x6": 227520, "pgj": 158050, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 188, "p4x6": 270720, "pgj": 188060, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 208, "p4x6": 299520, "pgj": 208070, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 248, "p4x6": 357120, "pgj": 248080, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 298, "p4x6": 429120, "pgj": 298090, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 348, "p4x6": 501120, "pgj": 348110, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "플렉스 NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 398, "p4x6": 573120, "pgj": 398130, "pton": 3350000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "WEPACK NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 300, "p4x6": 406210, "pgj": 282180, "pton": 3150000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "WEPACK NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 350, "p4x6": 473910, "pgj": 329210, "pton": 3150000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "WEPACK NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 400, "p4x6": 541620, "pgj": 376240, "pton": 3150000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "WEPACK CIS NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 300, "p4x6": 444900, "pgj": 309050, "pton": 3450000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "WEPACK CIS NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 350, "p4x6": 519050, "pgj": 360560, "pton": 3450000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "WEPACK CIS NEW엑스트라화이트 (EXTRA WHITE)", "color": null, "weight": 400, "p4x6": 593200, "pgj": 412070, "pton": 3450000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "크라프트지(식품용)", "color": null, "weight": 161, "p4x6": 165800, "pgj": null, "pton": 2395800}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "크라프트지(식품용)", "color": null, "weight": 175, "p4x6": 180220, "pgj": null, "pton": 2395800}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "크라프트지(식품용)", "color": null, "weight": 200, "p4x6": 205970, "pgj": null, "pton": 2395800}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "크라프트지(식품용)", "color": null, "weight": 250, "p4x6": 257460, "pgj": 178850, "pton": 2395800}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "크라프트지(식품용)", "color": null, "weight": 300, "p4x6": 308950, "pgj": 214620, "pton": 2395800}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "크라프트지(식품용)", "color": null, "weight": 337, "p4x6": 347060, "pgj": 241090, "pton": 2395800}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "SUGARRUSH (4*6,9*6)", "color": "", "weight": 90, "p4x6": 118770, "pgj": 82500, "pton": 3070000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "SUGARRUSH", "color": "", "weight": 130, "p4x6": 171550, "pgj": 119170, "pton": 3070000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "SUGARRUSH", "color": "", "weight": 160, "p4x6": 211140, "pgj": 146670, "pton": 3070000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "SUGARRUSH", "color": "", "weight": 220, "p4x6": 290320, "pgj": 201680, "pton": 3070000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "SUGARRUSH", "color": "", "weight": 300, "p4x6": 395900, "pgj": 275010, "pton": 3070000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "SUGARRUSH", "color": "", "weight": 350, "p4x6": 461880, "pgj": 320850, "pton": 3070000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "벌크", "color": "백색", "weight": 190, "p4x6": 228680, "pgj": 158860, "pton": 2800000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "벌크", "color": "백색", "weight": 225, "p4x6": 270810, "pgj": 188120, "pton": 2800000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "벌크", "color": "백색", "weight": 260, "p4x6": 312930, "pgj": 217380, "pton": 2800000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "벌크", "color": "백색", "weight": 295, "p4x6": 355060, "pgj": 246650, "pton": 2800000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "벌크", "color": "백색", "weight": 325, "p4x6": 391170, "pgj": 271730, "pton": 2800000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "케리어보드(식품용)", "color": "White Top", "weight": 245, "p4x6": 241170, "pgj": 167530, "pton": 2290000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "케리어보드(식품용)", "color": "White Top", "weight": 265, "p4x6": 260860, "pgj": 181210, "pton": 2290000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "케리어보드(식품용)", "color": "White Top", "weight": 300, "p4x6": 295310, "pgj": 205140, "pton": 2290000}, {"company": "삼화", "category": "특수", "subcategory": "패키징", "series": "케리어보드(식품용)", "color": "White Top", "weight": 330, "p4x6": 324840, "pgj": 225650, "pton": 2290000}, {"company": "삼화", "category": "특수", "subcategory": "기능지", "series": "트레싱지", "color": null, "weight": 90, "p4x6": 276610, "pgj": null, "pton": 7150000}, {"company": "삼화", "category": "특수", "subcategory": "기능지", "series": "트레싱지", "color": null, "weight": 100, "p4x6": 307350, "pgj": null, "pton": 7150000}, {"company": "삼화", "category": "특수", "subcategory": "기능지", "series": "트레싱지", "color": null, "weight": 110, "p4x6": 338080, "pgj": null, "pton": 7150000}, {"company": "삼화", "category": "특수", "subcategory": "기능지", "series": "트레싱지", "color": null, "weight": 130, "p4x6": 424140, "pgj": null, "pton": 7590000}, {"company": "삼화", "category": "특수", "subcategory": "기능지", "series": "트레싱지", "color": null, "weight": 145, "p4x6": 473080, "pgj": null, "pton": 7590000}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 80, "p4x6": 87140, "pgj": 60530, "pton": 2534100}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 100, "p4x6": 88000, "pgj": 61130, "pton": 2047100}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 120, "p4x6": 105590, "pgj": 73350, "pton": 2047100}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 150, "p4x6": 134290, "pgj": 93280, "pton": 2082700}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 180, "p4x6": 161150, "pgj": 111940, "pton": 2082700}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 200, "p4x6": 179050, "pgj": 124380, "pton": 2082700}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 250, "p4x6": 223810, "pgj": 155470, "pton": 2082700}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★아트/네오★스노우화이트", "color": null, "weight": 300, "p4x6": 268580, "pgj": 186570, "pton": 2082700}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★WEB", "color": null, "weight": 80, "p4x6": null, "pgj": null, "pton": 2534100}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★WEB", "color": null, "weight": 100, "p4x6": null, "pgj": null, "pton": 2047100}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★코트", "color": null, "weight": 70, "p4x6": 65420, "pgj": 45440, "pton": 2174000}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★코트", "color": null, "weight": 80, "p4x6": 71530, "pgj": 49690, "pton": 2080100}, {"company": "무림", "category": "인쇄", "subcategory": "아트", "series": "네오★전단용지/네오★전단용지(P)", "color": null, "weight": 90, "p4x6": 78710, "pgj": 54680, "pton": 2034500}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 70, "p4x6": 65010, "pgj": 45160, "pton": 2160700}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 80, "p4x6": 71400, "pgj": 49600, "pton": 2076300}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 90, "p4x6": 80000, "pgj": 55570, "pton": 2067800}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 95, "p4x6": 84240, "pgj": 58520, "pton": 2062800}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 100, "p4x6": 88470, "pgj": 61460, "pton": 2058100}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 120, "p4x6": 106160, "pgj": 73750, "pton": 2058100}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 150, "p4x6": 132700, "pgj": 92180, "pton": 2058100}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 180, "p4x6": 159240, "pgj": 110620, "pton": 2058100}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 220, "p4x6": 203370, "pgj": 141270, "pton": 2150500}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상", "color": null, "weight": 260, "p4x6": 240340, "pgj": 166960, "pton": 2150500}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★미색", "color": null, "weight": 70, "p4x6": 66960, "pgj": 46520, "pton": 2225500}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★미색", "color": null, "weight": 80, "p4x6": 73540, "pgj": 51090, "pton": 2138600}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★미색", "color": null, "weight": 90, "p4x6": 82780, "pgj": 57510, "pton": 2139800}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★미색", "color": null, "weight": 95, "p4x6": 87380, "pgj": 60700, "pton": 2139800}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★미색", "color": null, "weight": 100, "p4x6": 91130, "pgj": 63300, "pton": 2120000}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★미색", "color": null, "weight": 120, "p4x6": 109350, "pgj": 75960, "pton": 2120000}, {"company": "무림", "category": "인쇄", "subcategory": "백상", "series": "네오★백상(반유광)", "color": null, "weight": 90, "p4x6": 75110, "pgj": 52180, "pton": 1941600}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(백색)", "color": null, "weight": 65, "p4x6": 63420, "pgj": 44050, "pton": 2269800}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(백색)", "color": null, "weight": 70, "p4x6": 66960, "pgj": 46520, "pton": 2225500}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(백색)", "color": null, "weight": 75, "p4x6": 70350, "pgj": 48870, "pton": 2182100}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(백색)", "color": null, "weight": 80, "p4x6": 73540, "pgj": 51090, "pton": 2138600}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(백색)", "color": null, "weight": 100, "p4x6": 91120, "pgj": 63290, "pton": 2119700}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(미색)", "color": null, "weight": 65, "p4x6": 65320, "pgj": 45380, "pton": 2337900}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(미색)", "color": null, "weight": 70, "p4x6": 68970, "pgj": 47910, "pton": 2292200}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(미색)", "color": null, "weight": 80, "p4x6": 75750, "pgj": 52620, "pton": 2202800}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★S플러스(미색)", "color": null, "weight": 100, "p4x6": 93850, "pgj": 65190, "pton": 2183300}, {"company": "무림", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "네오★고급교과서지", "color": null, "weight": 75, "p4x6": 71070, "pgj": 49370, "pton": 2204600}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★아트쇼핑백", "color": "", "weight": 140, "p4x6": 124400, "pgj": 86420, "pton": 2067200}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★아트쇼핑백", "color": "", "weight": 160, "p4x6": 142180, "pgj": 98760, "pton": 2067200}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★파워쇼핑백", "color": null, "weight": 110, "p4x6": 109410, "pgj": 76000, "pton": 2313930}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★파워쇼핑백", "color": null, "weight": 120, "p4x6": 119360, "pgj": 82910, "pton": 2313930}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★파워쇼핑백", "color": null, "weight": 140, "p4x6": 139250, "pgj": 96730, "pton": 2313930}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★백상쇼핑백", "color": "", "weight": 140, "p4x6": 135320, "pgj": 94000, "pton": 2248680}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★백상쇼핑백", "color": "", "weight": 160, "p4x6": 154660, "pgj": 107430, "pton": 2248680}, {"company": "무림", "category": "인쇄", "subcategory": "쇼핑백", "series": "네오★백상쇼핑백", "color": "", "weight": 180, "p4x6": 173990, "pgj": 120860, "pton": 2248680}, {"company": "무림", "category": "산업", "subcategory": "CCP류", "series": "네오CCP", "color": null, "weight": 200, "p4x6": 270400, "pgj": 187840, "pton": 3145300}, {"company": "무림", "category": "산업", "subcategory": "CCP류", "series": "네오CCP", "color": null, "weight": 250, "p4x6": 334760, "pgj": 232540, "pton": 3115100}, {"company": "무림", "category": "산업", "subcategory": "CCP류", "series": "네오CCP", "color": null, "weight": 300, "p4x6": 401710, "pgj": 279050, "pton": 3115100}, {"company": "무림", "category": "산업", "subcategory": "CCP류", "series": "네오CCP", "color": null, "weight": 350, "p4x6": 468660, "pgj": 325560, "pton": 3115100}, {"company": "무림", "category": "산업", "subcategory": "CCP류", "series": "네오CCP", "color": null, "weight": 400, "p4x6": 535620, "pgj": 372070, "pton": 3115100}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MMB(편면)", "color": null, "weight": 300, "p4x6": 361410, "pgj": 252670, "pton": 2800000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MMB(편면)", "color": null, "weight": 350, "p4x6": 421640, "pgj": 294780, "pton": 2800000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MMB(편면)", "color": null, "weight": 400, "p4x6": 481880, "pgj": 336900, "pton": 2800000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(화이트)", "color": null, "weight": 300, "p4x6": 358760, "pgj": 249210, "pton": 2782000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(화이트)", "color": null, "weight": 350, "p4x6": 418550, "pgj": 290750, "pton": 2782000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(화이트)", "color": null, "weight": 400, "p4x6": 478340, "pgj": 332280, "pton": 2782000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(플러스)", "color": null, "weight": 250, "p4x6": 311260, "pgj": 216220, "pton": 2896400}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(플러스)", "color": null, "weight": 300, "p4x6": 364120, "pgj": 252940, "pton": 2823600}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(플러스)", "color": null, "weight": 350, "p4x6": 424810, "pgj": 295100, "pton": 2823600}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★MGB(플러스)", "color": null, "weight": 400, "p4x6": 485490, "pgj": 337250, "pton": 2823600}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★뷰티팩", "color": null, "weight": 300, "p4x6": 358760, "pgj": 249210, "pton": 2782000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★뷰티팩", "color": null, "weight": 350, "p4x6": 418550, "pgj": 290750, "pton": 2782000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오★뷰티팩", "color": null, "weight": 400, "p4x6": 478340, "pgj": 332280, "pton": 2782000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오TMB", "color": null, "weight": 300, "p4x6": 358640, "pgj": 249870, "pton": 2769000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오TMB", "color": null, "weight": 350, "p4x6": 418420, "pgj": 291520, "pton": 2769000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오TMB(EW)", "color": null, "weight": 325, "p4x6": 386840, "pgj": 268720, "pton": 2769000}, {"company": "무림", "category": "산업", "subcategory": "All-Pulp", "series": "네오TMB(EW)", "color": null, "weight": 375, "p4x6": 446350, "pgj": 310060, "pton": 2769000}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★그린박리지(S1)", "color": null, "weight": 80, "p4x6": null, "pgj": null, "pton": 3290630}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★그린박리지(D1)", "color": null, "weight": 100, "p4x6": null, "pgj": null, "pton": 2959500}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★그린박리지(D1)", "color": null, "weight": 130, "p4x6": null, "pgj": null, "pton": 2959500}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지(백색)", "color": null, "weight": 70, "p4x6": null, "pgj": null, "pton": 2065980}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지(백색)", "color": null, "weight": 80, "p4x6": null, "pgj": null, "pton": 2065980}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지(백색)", "color": null, "weight": 90, "p4x6": null, "pgj": null, "pton": 2065980}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지", "color": null, "weight": 100, "p4x6": null, "pgj": null, "pton": 2047500}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지(백색P/황색/미색/옥색)", "color": null, "weight": 80, "p4x6": null, "pgj": null, "pton": 2397480}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지(백색P/황색/미색/옥색)", "color": null, "weight": "90,95", "p4x6": null, "pgj": null, "pton": 2301060}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★박리지(백색P/황색/미색/옥색)", "color": null, "weight": "100,120", "p4x6": null, "pgj": null, "pton": 2268000}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★CP지", "color": null, "weight": 70, "p4x6": null, "pgj": null, "pton": 2407350}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오★데칼페이퍼", "color": null, "weight": "165,175", "p4x6": null, "pgj": null, "pton": 2199310}, {"company": "무림", "category": "특수", "subcategory": "기능지", "series": "네오전사원지", "color": null, "weight": "145,165,175", "p4x6": null, "pgj": null, "pton": 2443680}, {"company": "무림", "category": "특수", "subcategory": "식품용지", "series": "네오무형광백상지", "color": null, "weight": "160~220", "p4x6": null, "pgj": null, "pton": 2176530}, {"company": "무림", "category": "특수", "subcategory": "식품용지", "series": "네오클린팩", "color": null, "weight": "230~350", "p4x6": null, "pgj": null, "pton": 2176530}, {"company": "무림", "category": "특수", "subcategory": "식품용지", "series": "네오아이스캔디지", "color": null, "weight": 155, "p4x6": null, "pgj": null, "pton": 3263980}, {"company": "무림", "category": "특수", "subcategory": "식품용지", "series": "네오백상아이스콘지", "color": null, "weight": "90~140", "p4x6": null, "pgj": null, "pton": 2354400}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 105, "p4x6": 165870, "pgj": 115220, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 130, "p4x6": 205360, "pgj": 142660, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 160, "p4x6": 252750, "pgj": 175580, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 190, "p4x6": 300150, "pgj": 208500, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 210, "p4x6": 331740, "pgj": 230450, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 230, "p4x6": 363330, "pgj": 252390, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "러프그로스", "series": "아티젠(백색)/아티젠(고백색)", "color": null, "weight": 320, "p4x6": 505510, "pgj": 351160, "pton": 3675000}, {"company": "무림", "category": "특수", "subcategory": "도화지", "series": "네오도화용지", "color": null, "weight": 105, "p4x6": 91370, "pgj": 63470, "pton": 2024300}, {"company": "무림", "category": "특수", "subcategory": "도화지", "series": "네오도화용지", "color": null, "weight": 130, "p4x6": 112620, "pgj": 78230, "pton": 2015300}, {"company": "무림", "category": "특수", "subcategory": "도화지", "series": "네오도화용지", "color": null, "weight": 170, "p4x6": 147270, "pgj": 102300, "pton": 2015300}, {"company": "무림", "category": "특수", "subcategory": "도화지", "series": "네오도화용지", "color": null, "weight": 180, "p4x6": 155930, "pgj": 108320, "pton": 2015300}, {"company": "무림", "category": "특수", "subcategory": "도화지", "series": "네오드로잉/네오드로잉(백색)", "color": null, "weight": 200, "p4x6": 248850, "pgj": 172870, "pton": 2894630}, {"company": "무림", "category": "특수", "subcategory": "도화지", "series": "네오드로잉/네오드로잉(백색)", "color": null, "weight": 220, "p4x6": 273740, "pgj": 190160, "pton": 2894630}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 90, "p4x6": 142170, "pgj": 98760, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 105, "p4x6": 165870, "pgj": 115230, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 130, "p4x6": 205360, "pgj": 142650, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 160, "p4x6": 252760, "pgj": 175580, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 190, "p4x6": 300140, "pgj": 208500, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 210, "p4x6": 331740, "pgj": 230440, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 230, "p4x6": 363330, "pgj": 252390, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "러프그로스", "series": "아르떼(UW)/아르떼(NW)", "color": null, "weight": 310, "p4x6": 489710, "pgj": 340180, "pton": 3675000}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 60, "p4x6": 66180, "pgj": 45980, "pton": 2566200}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 70, "p4x6": 65010, "pgj": 45160, "pton": 2160600}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 75, "p4x6": 68330, "pgj": 47460, "pton": 2119500}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 80, "p4x6": 71400, "pgj": 49600, "pton": 2076300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 90, "p4x6": 79990, "pgj": 55560, "pton": 2067700}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 100, "p4x6": 88460, "pgj": 61460, "pton": 2058100}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 120, "p4x6": 106160, "pgj": 73750, "pton": 2058100}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지", "color": null, "weight": 150, "p4x6": 132690, "pgj": 92170, "pton": 2058100}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "하트유광지", "color": null, "weight": 180, "p4x6": 159230, "pgj": 110610, "pton": 2058100}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "하트유광지", "color": null, "weight": 220, "p4x6": 203350, "pgj": 141270, "pton": 2150300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "하트유광지", "color": null, "weight": 260, "p4x6": 240320, "pgj": 166950, "pton": 2150300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지(미색)", "color": null, "weight": 70, "p4x6": 66960, "pgj": 46510, "pton": 2225500}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지(미색)", "color": null, "weight": 80, "p4x6": 73540, "pgj": 51090, "pton": 2138700}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지(미색)", "color": null, "weight": 95, "p4x6": 86870, "pgj": 60340, "pton": 2127300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린유광지(미색)", "color": null, "weight": 100, "p4x6": 91110, "pgj": 63300, "pton": 2119700}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "친환경유광FSC(미색)", "color": null, "weight": 80, "p4x6": 73540, "pgj": 51090, "pton": 2138700}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "친환경유광FSC(미색)", "color": null, "weight": 95, "p4x6": 86870, "pgj": 60340, "pton": 2127300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린반유광지", "color": null, "weight": 75, "p4x6": 68330, "pgj": 47460, "pton": 2119500}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린반유광지", "color": null, "weight": 80, "p4x6": 71400, "pgj": 49600, "pton": 2076300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린반유광지", "color": null, "weight": 90, "p4x6": 79990, "pgj": 55570, "pton": 2067700}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "크린반유광지", "color": null, "weight": 95, "p4x6": 84340, "pgj": 58580, "pton": 2065300}, {"company": "한국", "category": "인쇄", "subcategory": "백상", "series": "H 봉투용지", "color": null, "weight": 90, "p4x6": 80170, "pgj": 55690, "pton": 2072300}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 80, "p4x6": 87120, "pgj": 60510, "pton": 2534300}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 90, "p4x6": 87970, "pgj": 61090, "pton": 2273820}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 100, "p4x6": 88010, "pgj": 61130, "pton": 2047350}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 120, "p4x6": 105600, "pgj": 73350, "pton": 2047300}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 150, "p4x6": 134300, "pgj": 93300, "pton": 2083000}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 180, "p4x6": 161160, "pgj": 111960, "pton": 2083000}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 200, "p4x6": 179070, "pgj": 124390, "pton": 2083000}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 216, "p4x6": 193480, "pgj": 134400, "pton": 2083800}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 250, "p4x6": 223830, "pgj": 155490, "pton": 2083040}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트", "color": null, "weight": 300, "p4x6": 268640, "pgj": 186600, "pton": 2083040}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 80, "p4x6": 87120, "pgj": 60510, "pton": 2534300}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 90, "p4x6": 87970, "pgj": 61090, "pton": 2273820}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 100, "p4x6": 88010, "pgj": 61130, "pton": 2047350}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 120, "p4x6": 105600, "pgj": 73350, "pton": 2047300}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 150, "p4x6": 134300, "pgj": 93300, "pton": 2083000}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 180, "p4x6": 161160, "pgj": 111960, "pton": 2083000}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 200, "p4x6": 179070, "pgj": 124390, "pton": 2083000}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 216, "p4x6": 193480, "pgj": 134400, "pton": 2083800}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 250, "p4x6": 223830, "pgj": 155490, "pton": 2083040}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리스노화이트", "color": null, "weight": 300, "p4x6": 268640, "pgj": 186600, "pton": 2083040}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "하이벌크스노우", "color": null, "weight": 230, "p4x6": 206010, "pgj": 143110, "pton": 2083800}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "하이벌크스노우", "color": null, "weight": 240, "p4x6": 214970, "pgj": 149340, "pton": 2083800}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "하이벌크스노우", "color": null, "weight": 300, "p4x6": 268760, "pgj": 186690, "pton": 2084200}, {"company": "한국", "category": "인쇄", "subcategory": "아트", "series": "엑스프리아트/스노 웹", "color": null, "weight": 100, "p4x6": null, "pgj": null, "pton": 2047400}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드G", "color": null, "weight": 315, "p4x6": 369660, "pgj": 256790, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드N", "color": null, "weight": 235, "p4x6": 275770, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드N", "color": null, "weight": 255, "p4x6": 299240, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드N", "color": null, "weight": 295, "p4x6": 346180, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드N", "color": null, "weight": 315, "p4x6": 369652, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드N", "color": null, "weight": 345, "p4x6": 404860, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드N", "color": null, "weight": 365, "p4x6": 404860, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드 N DUO", "color": null, "weight": 215, "p4x6": 428320, "pgj": 299730, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "친환경", "series": "그린실드 N DUO", "color": null, "weight": 255, "p4x6": 299240, "pgj": null, "pton": 2730000}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "크린쇼핑백지", "color": null, "weight": 120, "p4x6": 92790, "pgj": 64460, "pton": 1798940}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "크린쇼핑백지", "color": null, "weight": 130, "p4x6": 100530, "pgj": 69830, "pton": 1798940}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "크린쇼핑백지", "color": null, "weight": 140, "p4x6": 108260, "pgj": 75200, "pton": 1798940}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "크린쇼핑백지", "color": null, "weight": 150, "p4x6": 115990, "pgj": 80580, "pton": 1798940}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "크린쇼핑백지", "color": null, "weight": 160, "p4x6": 123730, "pgj": 85950, "pton": 1798940}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "드림쇼핑백", "color": null, "weight": 140, "p4x6": 119040, "pgj": null, "pton": 1978000}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "하트코팅쇼핑백", "color": null, "weight": 110, "p4x6": 87520, "pgj": null, "pton": 1851000}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "하트코팅쇼핑백", "color": null, "weight": 120, "p4x6": 95480, "pgj": null, "pton": 1851000}, {"company": "한국", "category": "특수", "subcategory": "쇼핑백", "series": "하트코팅쇼핑백", "color": null, "weight": 140, "p4x6": 111390, "pgj": null, "pton": 1851000}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(W)", "color": null, "weight": 65, "p4x6": 63420, "pgj": 44060, "pton": 2270000}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(W)", "color": null, "weight": 70, "p4x6": 66960, "pgj": 46510, "pton": 2225500}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(W)", "color": null, "weight": 80, "p4x6": 73540, "pgj": 51090, "pton": 2138700}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(W)", "color": null, "weight": 90, "p4x6": 82380, "pgj": 57210, "pton": 2129400}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(W)", "color": null, "weight": 100, "p4x6": 91110, "pgj": 63300, "pton": 2119700}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(N)", "color": null, "weight": 65, "p4x6": 65320, "pgj": 45380, "pton": 2338000}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(N)", "color": null, "weight": 70, "p4x6": 68970, "pgj": 47910, "pton": 2292300}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(N)", "color": null, "weight": 80, "p4x6": 75750, "pgj": 52610, "pton": 2202800}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(N)", "color": null, "weight": 90, "p4x6": 84850, "pgj": 58930, "pton": 2193300}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 프리미엄(N)", "color": null, "weight": 100, "p4x6": 93850, "pgj": 65190, "pton": 2183300}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "M-matte 하이벌크(W)", "color": null, "weight": 110, "p4x6": 100220, "pgj": 69620, "pton": 2119700}, {"company": "한국", "category": "인쇄", "subcategory": "미량코트(MFC)", "series": "교과서용지(미색)", "color": null, "weight": 75, "p4x6": 71070, "pgj": 49380, "pton": 2204700}, {"company": "한국", "category": "산업", "subcategory": "CCP류", "series": "CCP", "color": null, "weight": 300, "p4x6": 401710, "pgj": 279050, "pton": 3115100}, {"company": "한국", "category": "산업", "subcategory": "CCP류", "series": "CCP", "color": null, "weight": 350, "p4x6": 468660, "pgj": 325560, "pton": 3115100}, {"company": "한국", "category": "산업", "subcategory": "CCP류", "series": "CCP", "color": null, "weight": 400, "p4x6": 535620, "pgj": 372070, "pton": 3115100}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace D(형광)", "color": null, "weight": 300, "p4x6": 275950, "pgj": 192930, "pton": 2139900}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace D(형광)", "color": null, "weight": 350, "p4x6": 321950, "pgj": 225090, "pton": 2139900}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace D(형광)", "color": null, "weight": 400, "p4x6": 367940, "pgj": 257240, "pton": 2139900}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace D Duo(형광/양면)", "color": null, "weight": 300, "p4x6": 275950, "pgj": 192930, "pton": 2139900}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace D Duo(형광/양면)", "color": null, "weight": 350, "p4x6": 321950, "pgj": 225090, "pton": 2139900}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace D Duo(형광/양면)", "color": null, "weight": 400, "p4x6": 367940, "pgj": 257240, "pton": 2139900}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace P(무형광)", "color": null, "weight": 300, "p4x6": 352050, "pgj": 246130, "pton": 2730000}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace P(무형광)", "color": null, "weight": 350, "p4x6": 410720, "pgj": 287150, "pton": 2730000}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace P(무형광)", "color": null, "weight": 400, "p4x6": 469400, "pgj": 328170, "pton": 2730000}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace P Duo(무형광/양면)", "color": null, "weight": 300, "p4x6": 352050, "pgj": 246130, "pton": 2730000}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace P Duo(무형광/양면)", "color": null, "weight": 350, "p4x6": 410720, "pgj": 287150, "pton": 2730000}, {"company": "한국", "category": "산업", "subcategory": "All-Pulp", "series": "Kace P Duo(무형광/양면)", "color": null, "weight": 400, "p4x6": 469400, "pgj": 328170, "pton": 2730000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 220, "p4x6": 146071, "pgj": 102120, "pton": 1538000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 240, "p4x6": 154074, "pgj": 107720, "pton": 1496000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 260, "p4x6": 163821, "pgj": 114530, "pton": 1463000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 280, "p4x6": 170644, "pgj": 119300, "pton": 1422000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 300, "p4x6": 181786, "pgj": 127090, "pton": 1409000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 350, "p4x6": 211334, "pgj": 147750, "pton": 1400000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 400, "p4x6": 236859, "pgj": 165600, "pton": 1377000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 450, "p4x6": 264042, "pgj": 184600, "pton": 1361000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 500, "p4x6": 289173, "pgj": 202170, "pton": 1345000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 550, "p4x6": 315973, "pgj": 220910, "pton": 1333000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 220, "p4x6": 183682, "pgj": 128420, "pton": 1933000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 240, "p4x6": 194851, "pgj": 136230, "pton": 1892000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 260, "p4x6": 208522, "pgj": 145780, "pton": 1862000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 280, "p4x6": 220206, "pgj": 153950, "pton": 1835000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 300, "p4x6": 234651, "pgj": 164050, "pton": 1819000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 350, "p4x6": 272084, "pgj": 190220, "pton": 1802000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 400, "p4x6": 307531, "pgj": 215000, "pton": 1788000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 450, "p4x6": 343130, "pgj": 239890, "pton": 1769000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 500, "p4x6": 375902, "pgj": 262800, "pton": 1748000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 550, "p4x6": 414366, "pgj": 289700, "pton": 1748000}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 200, "p4x6": 256969, "pgj": 179660, "pton": 2988020}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 220, "p4x6": 275751, "pgj": 192790, "pton": 2902650}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 230, "p4x6": 278908, "pgj": 194990, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 250, "p4x6": 304263, "pgj": 212720, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 280, "p4x6": 338070, "pgj": 236360, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 300, "p4x6": 363426, "pgj": 254080, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 350, "p4x6": 425405, "pgj": 297410, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 400, "p4x6": 484567, "pgj": 338780, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 420, "p4x6": 509923, "pgj": 356500, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "All-Pulp", "series": "B / BV / BW", "color": null, "weight": 450, "p4x6": 546547, "pgj": 382110, "pton": 2817250}, {"company": "한창", "category": "산업", "subcategory": "CCP류", "series": "CCP", "color": null, "weight": 300, "p4x6": 401710, "pgj": 279050, "pton": 3115100}, {"company": "한창", "category": "산업", "subcategory": "CCP류", "series": "CCP", "color": null, "weight": 350, "p4x6": 468660, "pgj": 325560, "pton": 3115100}, {"company": "한창", "category": "산업", "subcategory": "CCP류", "series": "CCP", "color": null, "weight": 400, "p4x6": 535620, "pgj": 372070, "pton": 3115100}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 240, "p4x6": 169283, "pgj": 118350, "pton": 1644000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 280, "p4x6": 188234, "pgj": 131600, "pton": 1569000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 300, "p4x6": 199453, "pgj": 139440, "pton": 1546000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 350, "p4x6": 232661, "pgj": 162660, "pton": 1541000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 400, "p4x6": 261153, "pgj": 182580, "pton": 1518000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 450, "p4x6": 290404, "pgj": 203030, "pton": 1497000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB", "color": null, "weight": 500, "p4x6": 318159, "pgj": 222440, "pton": 1480000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB(흰)", "color": null, "weight": 300, "p4x6": 212566, "pgj": 148610, "pton": 1648000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB(흰)", "color": null, "weight": 350, "p4x6": 247202, "pgj": 172830, "pton": 1637000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB(흰)", "color": null, "weight": 400, "p4x6": 281581, "pgj": 196860, "pton": 1637000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB(흰)", "color": null, "weight": 450, "p4x6": 317597, "pgj": 222040, "pton": 1637000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "KB(흰)", "color": null, "weight": 500, "p4x6": 351977, "pgj": 246080, "pton": 1637000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "CB", "color": null, "weight": 300, "p4x6": 234651, "pgj": 164050, "pton": 1819000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "CB", "color": null, "weight": 350, "p4x6": 272084, "pgj": 190220, "pton": 1802000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "CB", "color": null, "weight": 400, "p4x6": 307531, "pgj": 215000, "pton": 1788000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "CB", "color": null, "weight": 450, "p4x6": 343130, "pgj": 239890, "pton": 1769000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "CB", "color": null, "weight": 500, "p4x6": 375902, "pgj": 262800, "pton": 1748000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 220, "p4x6": 137634, "pgj": 96220, "pton": 1449000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 240, "p4x6": 144706, "pgj": 101170, "pton": 1405000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 260, "p4x6": 153036, "pgj": 106990, "pton": 1366000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 280, "p4x6": 159986, "pgj": 111850, "pton": 1333000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 300, "p4x6": 167706, "pgj": 117250, "pton": 1300000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 350, "p4x6": 193076, "pgj": 134990, "pton": 1279000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 400, "p4x6": 216983, "pgj": 151700, "pton": 1262000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 450, "p4x6": 240585, "pgj": 168200, "pton": 1240000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 500, "p4x6": 260647, "pgj": 182230, "pton": 1212000}, {"company": "한창", "category": "산업", "subcategory": "백판지", "series": "TM", "color": null, "weight": 550, "p4x6": 287317, "pgj": 200870, "pton": 1212000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 180, "p4x6": 130341, "pgj": null, "pton": 1693000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 200, "p4x6": 138122, "pgj": null, "pton": 1606000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 220, "p4x6": 146478, "pgj": null, "pton": 1542000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 240, "p4x6": 153853, "pgj": null, "pton": 1494000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 260, "p4x6": 163701, "pgj": null, "pton": 1462000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 280, "p4x6": 171157, "pgj": null, "pton": 1426000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 300, "p4x6": 181371, "pgj": null, "pton": 1406000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 350, "p4x6": 211495, "pgj": null, "pton": 1401000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 400, "p4x6": 237412, "pgj": null, "pton": 1380000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 450, "p4x6": 264042, "pgj": null, "pton": 1361000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 500, "p4x6": 289173, "pgj": null, "pton": 1345000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "SC", "color": null, "weight": 550, "p4x6": 316227, "pgj": null, "pton": 1334000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 200, "p4x6": 170881, "pgj": null, "pton": 1987000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 220, "p4x6": 183783, "pgj": null, "pton": 1935000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 240, "p4x6": 194631, "pgj": null, "pton": 1890000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 260, "p4x6": 208402, "pgj": null, "pton": 1861000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 280, "p4x6": 220206, "pgj": null, "pton": 1835000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 300, "p4x6": 235065, "pgj": null, "pton": 1822000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 350, "p4x6": 272245, "pgj": null, "pton": 1803000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 400, "p4x6": 307531, "pgj": null, "pton": 1788000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 450, "p4x6": 343960, "pgj": null, "pton": 1773000}, {"company": "깨끗한나라", "category": "산업", "subcategory": "백판지", "series": "IV", "color": null, "weight": 500, "p4x6": 375902, "pgj": null, "pton": 1748000}, {"company": "한솔", "category": "산업", "subcategory": "All-Pulp", "series": "AB라이트", "color": null, "weight": 215, "p4x6": 259100, "pgj": 181090, "pton": 2786000}];
+
+const fmt = n => (n===null || n===undefined || n==='' || isNaN(n)) ? '<span class="dash">-</span>' : Number(n).toLocaleString('ko-KR');
+const isNum = v => typeof v === 'number' && !isNaN(v);
+
+function seriesDisplay(r){
+  const c = r.color;
+  const base = r.series.replace(/\n/g, '<br>');
+  if(!c || c === '-') return { title: base, sub: '' };
+  const cc = c.replace(/\n/g, '<br>');
+  const m = /^\[(.+?)\]\s*([\s\S]*)$/.exec(cc);
+  if(m) return { title: `${base} [${m[1]}]`, sub: m[2] };
+  return { title: base, sub: cc };
+}
+
+/* ============================================================
+   [탭 1] 고시가 계산기
+   ============================================================ */
+let selCompany = '';
+let selSeries = '';
+let selWeightRow = null;
+let sizePreset = 'a';
+let widthMM = 788, heightMM = 1091;
+let discountPct = 0;
+let discountMode = 'pct';       // 'pct' (할인율 입력 기준) | 'price' (할인가 입력 기준)
+let discountPriceInput = null;  // 할인가 직접입력 값
+
+const SIZE_PRESETS = [
+  { key:'a', label:'788×1091', w:788, h:1091 },
+  { key:'b', label:'636×939',  w:636, h:939 },
+  { key:'c', label:'889×1194', w:889, h:1194 },
+  { key:'d', label:'788×545',  w:788, h:545 },
+  { key:'e', label:'788×1092', w:788, h:1092 },
+  { key:'f', label:'640×940',  w:640, h:940 },
+  { key:'g', label:'880×625',  w:880, h:625 },
+  { key:'h', label:'394×545',  w:394, h:545 },
+];
+/* e/f는 각각 a/b의 산업 분류용 규격입니다 — 산업 분류 지종을 선택하면 기본값이 자동으로 e/f로 적용됩니다. */
+
+/* 연당 중량(kg) = 가로(mm) × 세로(mm) × 평량(g/㎡) × 500매 ÷ 1,000,000,000 */
+function reamWeightKg(w, h, gsm){
+  if(!isNum(w) || !isNum(h) || !isNum(gsm)) return null;
+  return w * h * gsm * 500 / 1000000000;
+}
+
+/* ============================================================
+   UI 빌드 — 모든 선택 단계를 처음부터 한 번에 표시
+   ============================================================ */
+function buildCalculatorUI(){
+  const wrap = document.getElementById('calc-wrap');
+  wrap.innerHTML = `
+    <div class="calc-block row-double">
+      <div style="position:relative;">
+        <div class="section-label"><span class="step-badge">1</span>지종 선택</div>
+        <input type="text" id="series-search" class="text-input" placeholder="지종명을 입력해 검색하세요 (예: AB더블랑)" autocomplete="off">
+        <div id="series-suggest" class="suggest-list"></div>
+      </div>
+      <div>
+        <div class="section-label"><span class="step-badge">2</span>평량 선택</div>
+        <select id="sel-weight" disabled><option value="">지종을 먼저 선택하세요</option></select>
+        <select id="sel-color" style="display:none;"><option value="">색상 선택</option></select>
+      </div>
+    </div>
+
+    <div class="calc-block" id="size-card">
+      <div class="section-label"><span class="step-badge">3</span>규격 선택</div>
+      <div id="size-body"></div>
+    </div>
+
+    <div class="calc-block row-double">
+      <div>
+        <div class="section-label"><span class="step-badge">4</span>할인율 입력</div>
+        <div class="discount-flex">
+          <input type="number" id="discount-input" min="0" step="0.5" placeholder="할인율을 입력하세요">
+          <span class="pct-label">%</span>
+        </div>
+      </div>
+      <div>
+        <div class="section-label"><span class="step-badge">5</span>할인가 입력</div>
+        <div class="discount-flex">
+          <input type="text" inputmode="numeric" id="discount-price-input" placeholder="할인가를 입력하세요">
+          <span class="pct-label">원</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="result-slot"></div>
+  `;
+
+  const searchInput = document.getElementById('series-search');
+  const suggestBox = document.getElementById('series-suggest');
+
+  searchInput.addEventListener('input', ()=> renderSuggestions(searchInput.value));
+  searchInput.addEventListener('focus', ()=> renderSuggestions(searchInput.value));
+  document.addEventListener('click', (e)=>{
+    if(!suggestBox.contains(e.target) && e.target !== searchInput){
+      suggestBox.style.display = 'none';
+    }
+  });
+
+  document.getElementById('discount-input').addEventListener('input', (e)=>{
+    let v = parseFloat(e.target.value);
+    if(isNaN(v)) v = 0;
+    v = Math.max(0, v); // 상한 없음
+    discountPct = v;
+    discountMode = 'pct';
+    const res = renderResult();
+    const priceInput = document.getElementById('discount-price-input');
+    if(res && priceInput && document.activeElement !== priceInput){
+      priceInput.value = fmt(res.discR);
+    }
+  });
+
+  document.getElementById('discount-price-input').addEventListener('input', (e)=>{
+    const raw = e.target.value.replace(/[^0-9]/g, '');
+    const v = raw === '' ? NaN : parseFloat(raw);
+    discountPriceInput = isNaN(v) ? null : Math.max(0, v);
+    discountMode = 'price';
+    // 세자리 콤마 포맷 적용 (커서는 끝으로)
+    e.target.value = discountPriceInput === null ? '' : discountPriceInput.toLocaleString('ko-KR');
+    const res = renderResult();
+    const pctInput = document.getElementById('discount-input');
+    if(res && pctInput && document.activeElement !== pctInput){
+      pctInput.value = res.pctDisplay;
+    }
+  });
+
+  renderSizeSection();
+  renderResult();
+}
+
+function renderSuggestions(rawQuery){
+  const suggestBox = document.getElementById('series-suggest');
+  const q = rawQuery.trim().toLowerCase();
+
+  const seen = new Set();
+  let matches = [];
+
+  if(q === ''){
+    // 검색어 없이 클릭: 산업/All-Pulp 지종만 고시가표에 나온 순서 그대로 표시 (정렬하지 않음)
+    for(const r of DATA){
+      if(r.category !== '산업' || r.subcategory !== 'All-Pulp') continue;
+      const key = r.company + '|' + r.series;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      matches.push({ company:r.company, series:r.series, seriesFirstLine: r.series.split('\n')[0] });
+    }
+  } else {
+    // 검색어 입력 시: 전체 지종 대상으로 매칭 후 가나다순 정렬
+    for(const r of DATA){
+      const key = r.company + '|' + r.series;
+      if(seen.has(key)) continue;
+      const seriesFirstLine = r.series.split('\n')[0];
+      if(!seriesFirstLine.toLowerCase().includes(q) && !r.company.toLowerCase().includes(q)) continue;
+      seen.add(key);
+      matches.push({ company:r.company, series:r.series, seriesFirstLine });
+    }
+    matches.sort((a,b)=> a.seriesFirstLine.localeCompare(b.seriesFirstLine,'ko'));
+  }
+
+  matches = matches.slice(0, 40);
+
+  if(matches.length === 0){
+    suggestBox.innerHTML = `<div class="suggest-empty">검색 결과가 없습니다.</div>`;
+    suggestBox.style.display = 'block';
+    return;
+  }
+
+  suggestBox.innerHTML = matches.map((m,i)=>`
+    <div class="suggest-item" data-i="${i}">
+      <span class="s-name">${m.seriesFirstLine}</span>
+      <span class="s-company">${m.company}</span>
+    </div>`).join('');
+  suggestBox.style.display = 'block';
+
+  suggestBox.querySelectorAll('.suggest-item').forEach((el,i)=>{
+    el.addEventListener('click', ()=>{
+      const m = matches[i];
+      selCompany = m.company;
+      selSeries = m.series;
+      document.getElementById('series-search').value = m.seriesFirstLine;
+      suggestBox.style.display = 'none';
+      populateWeights();
+    });
+  });
+}
+
+function populateWeights(){
+  const weightSel = document.getElementById('sel-weight');
+  const colorSel = document.getElementById('sel-color');
+
+  selWeightRow = null;
+  colorSel.style.display = 'none';
+
+  if(!selSeries){
+    weightSel.disabled = true;
+    weightSel.innerHTML = '<option value="">지종을 먼저 선택하세요</option>';
+    renderResult();
+    return;
+  }
+
+  weightSel.disabled = false;
+  const rows = DATA.filter(r=>r.company===selCompany && r.series===selSeries);
+  const weights = [...new Set(rows.map(r=>r.weight))];
+  weightSel.innerHTML = '<option value="">평량</option>' +
+    weights.map(w=>`<option value="${w}">${w}${isNum(w)?'g/㎡':''}</option>`).join('');
+
+  weightSel.onchange = ()=>{
+    const wVal = weightSel.value;
+    if(wVal === ''){ selWeightRow = null; colorSel.style.display='none'; onRowConfirmed(); return; }
+    const matched = rows.filter(r=> String(r.weight) === wVal);
+    if(matched.length > 1){
+      colorSel.style.display = '';
+      colorSel.innerHTML = '<option value="">색상 선택</option>' +
+        matched.map((r,i)=>`<option value="${i}">${(r.color||'색상 미지정').replace(/\n/g,' / ')}</option>`).join('');
+      colorSel.onchange = ()=>{
+        const idx = colorSel.value;
+        selWeightRow = idx==='' ? null : matched[Number(idx)];
+        onRowConfirmed();
+      };
+      selWeightRow = null;
+      onRowConfirmed();
+    } else {
+      colorSel.style.display = 'none';
+      selWeightRow = matched[0] || null;
+      onRowConfirmed();
+    }
+  };
+
+  renderResult();
+}
+
+function onRowConfirmed(){
+  if(selWeightRow){
+    // 새 지종/평량이 확정되면 규격 기본값을 분류(산업 여부)에 맞춰 갱신 (a↔e, b↔f)
+    const isIndustrial = selWeightRow.category === '산업';
+    const defaultKey = isIndustrial ? 'e' : 'a';
+    const preset = SIZE_PRESETS.find(p=>p.key===defaultKey);
+    sizePreset = defaultKey;
+    widthMM = preset.w; heightMM = preset.h;
+    renderSizeSection();
+
+    // 할인 입력 상태 초기화 (플레이스홀더 다시 노출)
+    discountPct = 0;
+    discountMode = 'pct';
+    discountPriceInput = null;
+    const pctInput = document.getElementById('discount-input');
+    const priceInput = document.getElementById('discount-price-input');
+    if(pctInput) pctInput.value = '';
+    if(priceInput) priceInput.value = '';
+  }
+  renderResult();
+}
+
+/* ============================================================
+   3) 규격 선택 — 1~2행: 프리셋 8개(4열x2행) / 3행: 직접입력(스테퍼)
+   ============================================================ */
+function renderSizeSection(){
+  const body = document.getElementById('size-body');
+
+  const presetBtns = SIZE_PRESETS.map(p=>`
+    <div class="preset-box ${sizePreset===p.key?'active':''}" data-key="${p.key}" role="button" tabindex="0">
+      ${p.label}
+    </div>`).join('');
+
+  body.innerHTML = `
+    <div class="size-grid">${presetBtns}</div>
+    <div class="dims-row-v2">
+      <div class="dim-block">
+        <div class="dim-title">가로(mm)</div>
+        <div class="dim-stepper">
+          <button type="button" class="step-btn" id="width-minus" aria-label="가로 감소">−</button>
+          <input type="number" id="width-input" placeholder="mm" value="${widthMM ?? ''}">
+          <button type="button" class="step-btn" id="width-plus" aria-label="가로 증가">+</button>
+        </div>
+      </div>
+      <div class="swap-col">
+        <button type="button" class="swap-btn-v2" id="swap-btn" title="가로/세로 바꾸기">
+          <span>→</span><span>←</span>
+        </button>
+      </div>
+      <div class="dim-block">
+        <div class="dim-title">세로(mm)</div>
+        <div class="dim-stepper">
+          <button type="button" class="step-btn" id="height-minus" aria-label="세로 감소">−</button>
+          <input type="number" id="height-input" placeholder="mm" value="${heightMM ?? ''}">
+          <button type="button" class="step-btn" id="height-plus" aria-label="세로 증가">+</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  body.querySelectorAll('.preset-box').forEach(btn=>{
+    const activate = ()=>{
+      const key = btn.dataset.key;
+      if(sizePreset === key){
+        // 이미 선택된 프리셋을 다시 누르면 선택 해제 (가로/세로 0 → 결과에는 톤당가격 표시)
+        sizePreset = 'none';
+        widthMM = 0;
+        heightMM = 0;
+      } else {
+        const p = SIZE_PRESETS.find(p=>p.key===key);
+        sizePreset = p.key;
+        widthMM = p.w;
+        heightMM = p.h;
+      }
+      renderSizeSection(); renderResult();
+    };
+    btn.addEventListener('click', activate);
+    btn.addEventListener('keydown', (e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); activate(); } });
+  });
+
+  const widthInput = document.getElementById('width-input');
+  const heightInput = document.getElementById('height-input');
+  const clearPreset = ()=>{ sizePreset = 'custom'; body.querySelectorAll('.preset-box').forEach(b=>b.classList.remove('active')); };
+
+  widthInput.addEventListener('input', (e)=>{
+    widthMM = parseFloat(e.target.value); if(isNaN(widthMM)) widthMM = null;
+    clearPreset(); renderResult();
+  });
+  heightInput.addEventListener('input', (e)=>{
+    heightMM = parseFloat(e.target.value); if(isNaN(heightMM)) heightMM = null;
+    clearPreset(); renderResult();
+  });
+  document.getElementById('width-minus').addEventListener('click', ()=>{
+    widthMM = Math.max(1, (isNum(widthMM)?widthMM:0) - 1);
+    clearPreset(); widthInput.value = widthMM; renderResult();
+  });
+  document.getElementById('width-plus').addEventListener('click', ()=>{
+    widthMM = (isNum(widthMM)?widthMM:0) + 1;
+    clearPreset(); widthInput.value = widthMM; renderResult();
+  });
+  document.getElementById('height-minus').addEventListener('click', ()=>{
+    heightMM = Math.max(1, (isNum(heightMM)?heightMM:0) - 1);
+    clearPreset(); heightInput.value = heightMM; renderResult();
+  });
+  document.getElementById('height-plus').addEventListener('click', ()=>{
+    heightMM = (isNum(heightMM)?heightMM:0) + 1;
+    clearPreset(); heightInput.value = heightMM; renderResult();
+  });
+  document.getElementById('swap-btn').addEventListener('click', ()=>{
+    const t = widthMM; widthMM = heightMM; heightMM = t;
+    clearPreset();
+    renderSizeSection(); renderResult();
+  });
+}
+
+/* ============================================================
+   계산
+   ============================================================ */
+function computeSheet(){
+  const r = selWeightRow;
+  const pton = isNum(r.pton) ? r.pton : null;
+  if(!isNum(pton)) return { error:'톤당 단가 정보가 없어 계산할 수 없습니다.' };
+
+  // 규격이 선택 해제된 상태(가로/세로 0): 톤당가격을 그대로 결과로 표시
+  if(!widthMM || !heightMM){
+    const basePrice = pton;
+    let pct, disc;
+    if(discountMode === 'price' && isNum(discountPriceInput)){
+      disc = discountPriceInput;
+      pct = basePrice > 0 ? (1 - disc/basePrice) * 100 : 0;
+    } else {
+      pct = discountPct;
+      disc = basePrice * (1 - pct/100);
+    }
+    return {
+      unit: '원/톤',
+      price: basePrice,
+      discounted: disc,
+      effectivePct: pct,
+      basisLine: `규격 미선택 · 톤당 단가 기준`,
+    };
+  }
+
+  const gsm = isNum(r.weight) ? r.weight : null;
+  const wKg = reamWeightKg(widthMM, heightMM, gsm);
+  if(!isNum(wKg)) return { error:'가로/세로/평량 값을 확인해 주세요.' };
+
+  // 4×6(788×1091/1092) · 국판(636×939/640×940) 표준 규격이고
+  // 고시가표에 실제 등재된 가격(p4x6/pgj)이 있으면 그 값을 그대로 사용 (환산값 대신 실측값 우선)
+  const is46 = (widthMM===788 && heightMM===1091) || (widthMM===788 && heightMM===1092);
+  const isGukpan = (widthMM===636 && heightMM===939) || (widthMM===640 && heightMM===940);
+  let price, basisLine;
+
+  if(is46 && isNum(r.p4x6)){
+    price = r.p4x6;
+    basisLine = `${widthMM}×${heightMM}mm · 고시가표 4×6 등재가 기준 (톤당가 환산 시 ${fmt(Math.round(wKg*pton/1000))}원)`;
+  } else if(isGukpan && isNum(r.pgj)){
+    price = r.pgj;
+    basisLine = `${widthMM}×${heightMM}mm · 고시가표 국판 등재가 기준 (톤당가 환산 시 ${fmt(Math.round(wKg*pton/1000))}원)`;
+  } else {
+    price = wKg * pton / 1000;              // 원/연 — 표에 등재되지 않은 규격은 톤당가로 환산
+    basisLine = `${widthMM}×${heightMM}mm · 연당 ${wKg.toLocaleString('ko-KR',{maximumFractionDigits:2})}kg × ${fmt(pton)}원/톤 기준 환산`;
+  }
+
+  let effectivePct, discounted;
+
+  if(discountMode === 'price' && isNum(discountPriceInput)){
+    // 할인가를 직접 입력한 경우: 그 값을 공급가로 쓰고, 할인율은 역산
+    discounted = discountPriceInput;
+    effectivePct = price > 0 ? (1 - discounted/price) * 100 : 0;
+  } else {
+    effectivePct = discountPct;
+    discounted = price * (1 - effectivePct/100);
+  }
+
+  return { unit:'원/연', price, discounted, effectivePct, basisLine };
+}
+
+function renderResult(){
+  const slot = document.getElementById('result-slot');
+
+  if(!selWeightRow){
+    slot.innerHTML = `<div class="result-placeholder">지종과 평량을 선택하면 계산 결과가 표시됩니다.</div>`;
+    return null;
+  }
+
+  const res = computeSheet();
+  const r = selWeightRow;
+
+  if(res.error){
+    slot.innerHTML = `<div class="empty-box">${res.error}</div>`;
+    return null;
+  }
+
+  const priceR = Math.round(res.price);
+  const discR = Math.round(res.discounted);
+  const pctDisplay = Math.round(res.effectivePct * 100) / 100; // 소수 2자리
+  const seriesName = r.series.replace(/\n/g,' ');
+  const colorTxt = r.color ? r.color.replace(/\n/g,' / ') : '';
+
+  slot.innerHTML = `
+    <div class="result-card">
+      <div class="r-title">${seriesName}</div>
+      <div class="r-sub">${r.company} · ${r.category}${colorTxt ? ' · '+colorTxt : ''} · 평량 ${r.weight}g/㎡ · ${(widthMM && heightMM) ? `규격 ${widthMM}×${heightMM}mm` : '규격 미선택'}</div>
+
+      <div class="result-line">
+        <span class="r-label">고시가</span>
+        <span class="r-value">${fmt(priceR)}<span class="unit">${res.unit}</span></span>
+      </div>
+      <div class="result-line">
+        <span class="r-label">할인율</span>
+        <span class="r-value">${pctDisplay}<span class="unit">%</span></span>
+      </div>
+      <div class="result-divider"></div>
+      <div class="result-line main">
+        <span class="r-label">공급가</span>
+        <span class="r-value">${fmt(discR)}<span class="unit">${res.unit}</span></span>
+      </div>
+
+      <div class="calc-basis">${res.basisLine}</div>
+
+      <div class="result-actions">
+        <button id="copy-btn">📋 복사</button>
+        <button id="share-btn">🔗 공유</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('copy-btn').addEventListener('click', ()=>copyOrShare('copy'));
+  document.getElementById('share-btn').addEventListener('click', ()=>copyOrShare('share'));
+
+  return { ...res, priceR, discR, pctDisplay };
+}
+
+function buildSummaryText(){
+  const r = selWeightRow;
+  const res = computeSheet();
+  if(res.error) return null;
+  const pctDisplay = Math.round(res.effectivePct * 100) / 100;
+  const pctText = Number.isInteger(pctDisplay) ? pctDisplay : pctDisplay.toFixed(2).replace(/0+$/,'').replace(/\.$/,'');
+  const seriesName = r.series.replace(/\n/g,' ');
+  return [
+    `[더울림 Corp.]`,
+    seriesName,
+    `${r.weight}g ${(widthMM && heightMM) ? `${widthMM}×${heightMM}mm` : '규격 미선택(톤당가)'}`,
+    `고시가 ${Math.round(res.price).toLocaleString('ko-KR')}${res.unit}`,
+    `공급가 ${Math.round(res.discounted).toLocaleString('ko-KR')}${res.unit} (${pctText}%)`,
+  ].join('\n');
+}
+
+function copyOrShare(action){
+  const text = buildSummaryText();
+  if(!text) return;
+  const btn = document.getElementById(action==='copy' ? 'copy-btn' : 'share-btn');
+  const orig = btn.textContent;
+  const flash = (label)=>{
+    btn.textContent = label; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+  };
+  if(action === 'share' && navigator.share){
+    navigator.share({ title:'고시가 계산 결과', text }).catch(()=>{});
+    return;
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>flash('✅ 복사됨')).catch(()=>flash('복사 실패'));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); flash('✅ 복사됨'); } catch(e){ flash('복사 실패'); }
+    document.body.removeChild(ta);
+  }
+}
+
+
+
+/* ============================================================
+   [탭 2] 고시가표
+   ============================================================ */
+const COMPANY_ORDER = ['전체', '한솔', '무림', '한국', '삼화', '한창', '깨끗한나라'];
+let tfCompanySel = null; // 초기 화면: 아무 제지사도 선택되지 않은 상태
+
+function buildPriceTableUI(){
+  const companyRow = document.getElementById('company-row');
+  companyRow.innerHTML = COMPANY_ORDER.map(c=>`
+    <div class="company-box ${c===tfCompanySel?'active':''}" data-company="${c}" role="button" tabindex="0">${c}</div>
+  `).join('');
+  companyRow.querySelectorAll('.company-box').forEach(box=>{
+    const activate = ()=>{
+      const clickedCompany = box.dataset.company;
+      if(tfCompanySel === clickedCompany){
+        // 이미 선택된 제지사를 다시 클릭하면 선택 해제
+        tfCompanySel = null;
+      } else {
+        tfCompanySel = clickedCompany;
+      }
+      companyRow.querySelectorAll('.company-box').forEach(b=>b.classList.toggle('active', b.dataset.company === tfCompanySel));
+      renderPriceTable();
+    };
+    box.addEventListener('click', activate);
+    box.addEventListener('keydown', (e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); activate(); } });
+  });
+
+  // 분류 드롭다운: 대분류/소분류 조합 목록 (필터 검색 방식 — 텍스트 입력 아님)
+  const catSel = document.getElementById('tf-category');
+  const seenCat = new Set();
+  const combos = [];
+  DATA.forEach(r=>{
+    const key = r.category + '|' + (r.subcategory||'');
+    if(seenCat.has(key)) return;
+    seenCat.add(key);
+    combos.push({ category: r.category, subcategory: r.subcategory || '' });
+  });
+  combos.sort((a,b)=> (a.category+a.subcategory).localeCompare(b.category+b.subcategory, 'ko'));
+  catSel.innerHTML = '<option value="">전체 분류</option>' +
+    combos.map(c=>{
+      const val = c.category + '|' + c.subcategory;
+      const label = c.subcategory ? `${c.category} / ${c.subcategory}` : c.category;
+      return `<option value="${val}">${label}</option>`;
+    }).join('');
+
+  // 평량 드롭다운: 데이터에 등장하는 평량 값 전체 (숫자 오름차순, 비숫자는 뒤에)
+  const weightSel = document.getElementById('tf-weight');
+  const seenW = new Set();
+  const weights = [];
+  DATA.forEach(r=>{
+    const w = r.weight;
+    if(w === null || w === undefined) return;
+    const key = String(w);
+    if(seenW.has(key)) return;
+    seenW.add(key);
+    weights.push(w);
+  });
+  weights.sort((a,b)=>{
+    const an = isNum(a), bn = isNum(b);
+    if(an && bn) return a - b;
+    if(an) return -1;
+    if(bn) return 1;
+    return String(a).localeCompare(String(b), 'ko');
+  });
+  weightSel.innerHTML = '<option value="">전체 평량</option>' +
+    weights.map(w=>`<option value="${w}">${w}${isNum(w)?'g/㎡':''}</option>`).join('');
+
+  catSel.addEventListener('change', renderPriceTable);
+  document.getElementById('tf-series').addEventListener('input', renderPriceTable);
+  weightSel.addEventListener('change', renderPriceTable);
+
+  renderPriceTable();
+}
+
+function renderPriceTable(){
+  const catVal = document.getElementById('tf-category').value;
+  const seriesQ = document.getElementById('tf-series').value.trim().toLowerCase();
+  const weightVal = document.getElementById('tf-weight').value;
+
+  const wrap = document.getElementById('price-table-wrap');
+  const tableHead = `<thead><tr>
+      <th class="left">제지사 · 지종</th>
+      <th class="left">분류</th>
+      <th>평량(g/㎡)</th>
+      <th>4×6(원)</th>
+      <th>국판(원)</th>
+      <th>톤당(원)</th>
+    </tr></thead>`;
+
+  // 제지사를 아무것도 선택하지 않은 초기 상태: 표 헤더만 표시
+  if(tfCompanySel === null){
+    wrap.innerHTML = `<table>${tableHead}<tbody></tbody></table>`;
+    return;
+  }
+
+  let filtered = DATA.filter(r=>{
+    if(tfCompanySel !== '전체' && r.company !== tfCompanySel) return false;
+    if(catVal){
+      const key = r.category + '|' + (r.subcategory||'');
+      if(key !== catVal) return false;
+    }
+    if(seriesQ){
+      const hay = `${r.series} ${r.color||''}`.toLowerCase();
+      if(!hay.includes(seriesQ)) return false;
+    }
+    if(weightVal){
+      if(String(r.weight ?? '') !== weightVal) return false;
+    }
+    return true;
+  });
+
+  if(filtered.length===0){
+    wrap.innerHTML = `<table>${tableHead}<tbody></tbody></table>`;
+    return;
+  }
+
+  let body = '';
+  filtered.forEach(r=>{
+    const disp = seriesDisplay(r);
+    const sub = disp.sub ? `<span class="scolor">${disp.sub}</span>` : '';
+    const catTxt = r.subcategory ? `${r.category} / ${r.subcategory}` : r.category;
+    body += `<tr>
+      <td class="name-cell">${r.company} · ${disp.title}${sub}</td>
+      <td class="name-cell cat-cell">${catTxt}</td>
+      <td class="num">${r.weight ?? '<span class="dash">-</span>'}</td>
+      <td class="num">${fmt(r.p4x6)}</td>
+      <td class="num">${fmt(r.pgj)}</td>
+      <td class="num">${fmt(r.pton)}</td>
+    </tr>`;
+  });
+
+  wrap.innerHTML = `<table>${tableHead}<tbody>${body}</tbody></table>`;
+}
+
+/* ============================================================
+   초기화
+   ============================================================ */
+buildCalculatorUI();
+buildPriceTableUI();
+</script>
+
+</body>
+</html>
