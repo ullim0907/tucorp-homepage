@@ -1,9 +1,9 @@
 {
   "projects": {
-    "default": "여기에_기존_TUCorp_Firebase_프로젝트_ID_입력"
+    "default": "tucorp-93a17"
   },
   "targets": {
-    "여기에_기존_TUCorp_Firebase_프로젝트_ID_입력": {
+    "tucorp-93a17": {
       "hosting": {
         "homepage": [
           "tucorp-homepage"
